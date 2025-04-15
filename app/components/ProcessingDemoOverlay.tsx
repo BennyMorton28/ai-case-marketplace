@@ -22,7 +22,7 @@ export default function ProcessingDemoOverlay({ demoId, demoTitle, onComplete }:
         const startTime = Date.now();
 
         // Step 1: Restart the server
-        setStatus('Preparing your demo environment...');
+        setStatus('Preparing your case environment...');
         setProgress(10);
         
         try {
@@ -40,7 +40,7 @@ export default function ProcessingDemoOverlay({ demoId, demoTitle, onComplete }:
         }
         
         setProgress(30);
-        setStatus('Optimizing your demo files...');
+        setStatus('Optimizing your case files...');
         
         // Step 2: Poll for the availability of the demo's files
         // This indicates the server has restarted and the files are accessible
@@ -69,7 +69,7 @@ export default function ProcessingDemoOverlay({ demoId, demoTitle, onComplete }:
             
             if (iconResponse.ok) {
               iconAvailable = true;
-              setStatus('Finalizing your demo...');
+              setStatus('Finalizing your case...');
               setProgress(95);
             } else {
               // Try config.json as an alternative
@@ -83,7 +83,7 @@ export default function ProcessingDemoOverlay({ demoId, demoTitle, onComplete }:
                 
                 if (configResponse.ok) {
                   configAvailable = true;
-                  setStatus('Finalizing your demo...');
+                  setStatus('Finalizing your case...');
                   setProgress(95);
                 }
               } catch {
@@ -98,7 +98,7 @@ export default function ProcessingDemoOverlay({ demoId, demoTitle, onComplete }:
               setStatus(`Setting up your content (${attempts}/${maxAttempts})...`);
             }
           } catch (e) {
-            console.log('Error checking demo availability:', e);
+            console.log('Error checking case availability:', e);
             attempts++;
             await new Promise(resolve => setTimeout(resolve, 1000));
           }
@@ -109,19 +109,19 @@ export default function ProcessingDemoOverlay({ demoId, demoTitle, onComplete }:
         const elapsedTime = Date.now() - startTime;
         if ((!iconAvailable && !configAvailable) && elapsedTime >= 15000) {
           console.log('Timed out waiting for files but proceeding anyway after 15 seconds');
-          setStatus('Demo setup complete!');
+          setStatus('Case setup complete!');
           setProgress(100);
           setIsComplete(true);
         } else if (!iconAvailable && !configAvailable) {
-          throw new Error('Demo preparation timed out. Please refresh and try again.');
+          throw new Error('Case preparation timed out. Please refresh and try again.');
         } else {
           // Success path
           setProgress(100);
-          setStatus('Demo ready!');
+          setStatus('Case ready!');
           setIsComplete(true);
         }
         
-        // Short delay before completing to show the "Demo ready!" message
+        // Short delay before completing to show the "Case ready!" message
         timeoutId = setTimeout(() => {
           if (mounted) {
             onComplete();
@@ -129,7 +129,7 @@ export default function ProcessingDemoOverlay({ demoId, demoTitle, onComplete }:
         }, 1500);
         
       } catch (error) {
-        console.error('Error processing demo:', error);
+        console.error('Error processing case:', error);
         setError(error instanceof Error ? error.message : 'Unknown error occurred');
       }
     };
@@ -146,7 +146,7 @@ export default function ProcessingDemoOverlay({ demoId, demoTitle, onComplete }:
     <div className="fixed inset-0 bg-black bg-opacity-70 z-50 flex items-center justify-center p-4">
       <div className="bg-white dark:bg-gray-800 rounded-lg max-w-md w-full p-8 shadow-xl text-center">
         <h2 className="text-2xl font-bold mb-4 text-gray-900 dark:text-white">
-          {isComplete ? 'Ready!' : 'Processing Your Demo'}
+          {isComplete ? 'Ready!' : 'Processing Your Case'}
         </h2>
         
         <p className="mb-6 text-gray-600 dark:text-gray-300">
@@ -185,7 +185,7 @@ export default function ProcessingDemoOverlay({ demoId, demoTitle, onComplete }:
                 onClick={onComplete}
                 className="mt-6 px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors"
               >
-                View Demo Now
+                View Case Now
               </button>
             )}
           </>

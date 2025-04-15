@@ -139,7 +139,7 @@ export default function StreamingChat({ assistantId, assistantName, caseId, assi
           prompt: currentInput,
           messageHistory: messageHistory,
           assistantId: assistantId,
-          demoId: caseId
+          caseId: caseId
         }),
         signal: abortControllerRef.current.signal,
       });

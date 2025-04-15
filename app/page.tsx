@@ -228,14 +228,14 @@ export default function Dashboard() {
       <header className="bg-white dark:bg-gray-800 shadow-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex justify-between items-center">
-            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Noyes AI Demos</h1>
+            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">AI Case Marketplace</h1>
             <div className="flex items-center space-x-4">
               <button 
                 onClick={() => setIsCreateModalOpen(true)}
                 className="flex items-center px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
               >
                 <PlusIcon className="w-5 h-5 mr-2" />
-                Create Demo
+                Create a New Case
               </button>
               <span className="text-sm text-gray-500 dark:text-gray-400">Welcome, User</span>
               <button className="px-3 py-1 text-sm bg-blue-500 text-white rounded-md hover:bg-blue-600">

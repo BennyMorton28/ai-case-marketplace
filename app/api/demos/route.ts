@@ -108,9 +108,14 @@ export async function POST(request: NextRequest) {
       return new NextResponse('Missing required fields', { status: 400 });
     }
 
+    // Check if case password is provided when hasPassword is true
+    if (demoData.hasPassword === true && !demoData.password) {
+      return new NextResponse('Password is required when case is locked', { status: 400 });
+    }
+
     // Get the paths for saving files
     const { publicPath, standalonePath } = getSavePaths();
-    console.log(`Using paths: publicPath=${publicPath}, standalonePath=${standalonePath || 'none'} for demo creation`);
+    console.log(`Using paths: publicPath=${publicPath}, standalonePath=${standalonePath || 'none'} for case creation`);
 
     // Create necessary directories in the public path
     const demoDir = path.join(publicPath, 'public', 'demos', demoData.id);
@@ -159,9 +164,9 @@ export async function POST(request: NextRequest) {
       demoData.icon = `demos/${demoData.id}/icon.svg`;
     }
 
-    // Save demo explainer markdown - to both locations
-    const explainerFile = formData.get('explainer') as File;
-    if (explainerFile) {
+    // Save explainer markdown if provided (no longer required)
+    if (formData.has('explainer')) {
+      const explainerFile = formData.get('explainer') as File;
       const explainerBuffer = Buffer.from(await explainerFile.arrayBuffer());
       
       // Save to public directory
@@ -175,8 +180,6 @@ export async function POST(request: NextRequest) {
         fs.writeFileSync(standaloneExplainerPath, explainerBuffer);
         console.log(`Also saved explainer markdown to standalone: ${standaloneExplainerPath}`);
       }
-    } else {
-      return new NextResponse('Demo explainer markdown is required', { status: 400 });
     }
 
     // Save markdown files and icons for each assistant - to both locations

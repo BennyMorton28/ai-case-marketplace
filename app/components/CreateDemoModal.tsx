@@ -26,6 +26,8 @@ interface DemoData {
   id: string;
   title: string;
   author: string;
+  hasPassword: boolean;
+  password?: string;
   assistants: {
     id: string;
     name: string;
@@ -39,8 +41,9 @@ export default function CreateDemoModal({ isOpen, onClose, onSave }: CreateDemoM
   const router = useRouter();
   const [title, setTitle] = useState('');
   const [author, setAuthor] = useState('');
+  const [hasPassword, setHasPassword] = useState(false);
+  const [password, setPassword] = useState('');
   const [iconFile, setIconFile] = useState<File | null>(null);
-  const [explainerFile, setExplainerFile] = useState<File | null>(null);
   const [assistants, setAssistants] = useState<Assistant[]>([{
     id: 'assistant-1',
     name: '',
@@ -126,7 +129,7 @@ export default function CreateDemoModal({ isOpen, onClose, onSave }: CreateDemoM
       // Process demoId
       const demoId = title.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
       if (!demoId) {
-        throw new Error('Demo title must contain valid characters');
+        throw new Error('Case title must contain valid characters');
       }
       
       // Create demo data object
@@ -134,6 +137,8 @@ export default function CreateDemoModal({ isOpen, onClose, onSave }: CreateDemoM
         id: demoId,
         title,
         author,
+        hasPassword,
+        password: hasPassword ? password : undefined,
         assistants: assistants.map(assistant => ({
           id: generateAssistantId(assistant.name),
           name: assistant.name,
@@ -150,13 +155,6 @@ export default function CreateDemoModal({ isOpen, onClose, onSave }: CreateDemoM
       // Append demo icon if provided
       if (iconFile) {
         formData.append('icon', iconFile);
-      }
-      
-      // Append demo explainer markdown
-      if (explainerFile) {
-        formData.append('explainer', explainerFile);
-      } else {
-        throw new Error('Demo explainer markdown is required');
       }
       
       // Append markdown files and icons for each assistant
@@ -181,7 +179,7 @@ export default function CreateDemoModal({ isOpen, onClose, onSave }: CreateDemoM
       });
 
       if (!response.ok) {
-        throw new Error('Failed to create demo');
+        throw new Error('Failed to create case');
       }
 
       const result = await response.json();
@@ -189,8 +187,9 @@ export default function CreateDemoModal({ isOpen, onClose, onSave }: CreateDemoM
       // Reset form
       setTitle('');
       setAuthor('');
+      setHasPassword(false);
+      setPassword('');
       setIconFile(null);
-      setExplainerFile(null);
       setAssistants([{
         id: 'assistant-1',
         name: '',
@@ -203,7 +202,7 @@ export default function CreateDemoModal({ isOpen, onClose, onSave }: CreateDemoM
       // Close the modal
       onClose();
       
-      // Call the onSave callback with the new demo
+      // Call the onSave callback with the new case
       if (onSave) {
         onSave(result.demo);
       }
@@ -216,15 +215,15 @@ export default function CreateDemoModal({ isOpen, onClose, onSave }: CreateDemoM
       setIsProcessing(true);
       
     } catch (error) {
-      console.error('Error creating demo:', error);
-      alert(error instanceof Error ? error.message : 'Failed to create demo. Please try again.');
+      console.error('Error creating case:', error);
+      alert(error instanceof Error ? error.message : 'Failed to create case. Please try again.');
     }
   };
 
   // Handle completion of processing
   const handleProcessingComplete = () => {
     if (createdDemo) {
-      // Navigate to the new demo
+      // Navigate to the new case
       router.push(`/demo/${createdDemo.id}`);
     }
     setIsProcessing(false);
@@ -252,18 +251,18 @@ export default function CreateDemoModal({ isOpen, onClose, onSave }: CreateDemoM
   return (
     <Modal isOpen={isOpen} onClose={onClose}>
       <form onSubmit={handleSubmit} className="space-y-6">
-        <h2 className="text-xl font-bold mb-6 text-gray-800 dark:text-white">Create New Demo</h2>
+        <h2 className="text-xl font-bold mb-6 text-gray-800 dark:text-white">Create New Case</h2>
         
         {/* Demo Title */}
         <div className="space-y-1">
-          <label className={labelClass} htmlFor="demo-title">Demo Title</label>
+          <label className={labelClass} htmlFor="demo-title">Case Title</label>
           <input
             id="demo-title"
             type="text"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             className={inputClass}
-            placeholder="Enter a title for your demo"
+            placeholder="Enter a title for your case"
             required
           />
         </div>
@@ -282,33 +281,47 @@ export default function CreateDemoModal({ isOpen, onClose, onSave }: CreateDemoM
           />
         </div>
 
-        {/* Demo Explainer Markdown */}
-        <div className="space-y-1">
-          <label className={labelClass} htmlFor="explainer-file">Demo Explainer (Markdown)</label>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mb-2">
-            This markdown file will be shown in the right panel of your demo and should explain how to use the demo and its assistants.
-          </p>
+        {/* Lock Case (Password Protection) */}
+        <div className="flex items-center mt-4">
           <input
-            id="explainer-file"
-            type="file"
-            accept=".md,text/markdown"
-            onChange={(e) => setExplainerFile(e.target.files?.[0] || null)}
-            className={fileInputClass}
-            required
-            aria-label="Upload demo explainer markdown file"
+            type="checkbox"
+            id="case-password"
+            checked={hasPassword}
+            onChange={(e) => setHasPassword(e.target.checked)}
+            className="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+            aria-label="Lock Case"
           />
+          <label htmlFor="case-password" className="ml-2 block text-sm text-gray-700 dark:text-gray-300">
+            Lock Case
+          </label>
         </div>
+        
+        {/* Password field shown conditionally */}
+        {hasPassword && (
+          <div className="space-y-1">
+            <label className={labelClass} htmlFor="case-password-input">Password</label>
+            <input
+              id="case-password-input"
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className={inputClass}
+              placeholder="Enter password"
+              required={hasPassword}
+            />
+          </div>
+        )}
 
         {/* Icon Upload */}
         <div className="space-y-1">
-          <label className={labelClass} htmlFor="demo-icon">Demo Icon (SVG)</label>
+          <label className={labelClass} htmlFor="demo-icon">Case Icon (SVG)</label>
           <input
             id="demo-icon"
             type="file"
             accept=".svg"
             onChange={(e) => setIconFile(e.target.files?.[0] || null)}
             className={fileInputClass}
-            aria-label="Upload demo icon SVG file"
+            aria-label="Upload case icon SVG file"
           />
         </div>
 
@@ -438,7 +451,7 @@ export default function CreateDemoModal({ isOpen, onClose, onSave }: CreateDemoM
             type="submit"
             className="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition duration-150 ease-in-out"
           >
-            Create Demo
+            Create Case
           </button>
         </div>
       </form>

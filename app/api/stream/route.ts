@@ -15,9 +15,9 @@ interface ConversationMessage {
 
 export async function POST(req: Request) {
   try {
-    const { prompt, messageHistory, assistantId, demoId } = await req.json();
+    const { prompt, messageHistory, assistantId, demoId: caseId } = await req.json();
 
-    if (!prompt || !assistantId || !demoId) {
+    if (!prompt || !assistantId || !caseId) {
       return NextResponse.json(
         { error: 'Missing required fields' },
         { status: 400 }
@@ -28,9 +28,9 @@ export async function POST(req: Request) {
     let instructions = '';
     const markdownPaths = [
       // First try the public markdown directory
-      path.join(process.cwd(), 'public', 'markdown', `${demoId}-${assistantId}.md`),
-      // Then try the demo-specific directory
-      path.join(process.cwd(), 'public', 'demos', demoId, 'markdown', `${assistantId}.md`),
+      path.join(process.cwd(), 'public', 'markdown', `${caseId}-${assistantId}.md`),
+      // Then try the case-specific directory
+      path.join(process.cwd(), 'public', 'demos', caseId, 'markdown', `${assistantId}.md`),
       // Finally try the legacy location
       path.join(process.cwd(), 'assistants', `${assistantId}.md`)
     ];

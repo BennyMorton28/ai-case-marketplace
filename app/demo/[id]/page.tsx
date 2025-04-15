@@ -2,16 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useParams } from 'next/navigation';
-import StreamingDemo from '../../components/StreamingDemo';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
-import remarkMath from 'remark-math';
-import rehypeKatex from 'rehype-katex';
-import rehypeRaw from 'rehype-raw';
-import rehypeSanitize from 'rehype-sanitize';
-import rehypeHighlight from 'rehype-highlight';
-import 'katex/dist/katex.min.css';
-import 'highlight.js/styles/github-dark.css';
+import StreamingChat from '../../components/StreamingChat';
 import { ArrowLeftIcon, LockClosedIcon, LockOpenIcon } from '@heroicons/react/24/outline';
 import Link from 'next/link';
 import DemoIcon from '../../components/DemoIcon';
@@ -26,16 +17,18 @@ interface Assistant {
   password?: string;
 }
 
-interface DemoConfig {
+interface CaseConfig {
   id: string;
   title: string;
   author: string;
   icon?: string;
+  hasPassword?: boolean;
+  password?: string;
   assistants: Assistant[];
 }
 
-// Demo configurations
-const demoConfigs: Record<string, DemoConfig> = {
+// Static case configurations
+const staticCases: Record<string, CaseConfig> = {
   'math-assistant': {
     id: 'math-assistant',
     title: 'Math Assistant',
@@ -108,43 +101,39 @@ const demoConfigs: Record<string, DemoConfig> = {
   }
 };
 
-export default function DemoInterface() {
+export default function CaseInterface() {
   const params = useParams<{ id: string }>();
-  const demoId = params.id as string;
+  const caseId = params.id as string;
   const [selectedAssistant, setSelectedAssistant] = useState<Assistant | null>(null);
-  const [markdownContent, setMarkdownContent] = useState<string>('');
   const [unlockedAssistants, setUnlockedAssistants] = useState<Set<string>>(new Set());
   const [passwordError, setPasswordError] = useState<string>('');
-  const [demoConfig, setDemoConfig] = useState<DemoConfig | null>(null);
+  const [caseConfig, setCaseConfig] = useState<CaseConfig | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+  const [casePassword, setCasePassword] = useState<string>('');
+  const [isCaseUnlocked, setIsCaseUnlocked] = useState<boolean>(false);
 
-  // Function to load markdown content - now only loads demo explainer
-  const loadExplainerMarkdown = async (demoId: string) => {
-    try {
-      const path = `/demos/${demoId}/explainer.md`;
-      console.log(`Loading demo explainer from: ${path}`);
-      
-      const response = await fetch(path);
-      if (response.ok) {
-        const content = await response.text();
-        console.log(`Successfully loaded demo explainer`);
-        return content;
-      }
-      
-      console.error(`Failed to load demo explainer`);
-      return '# Error loading demo information\n\nPlease try again later.';
-    } catch (error) {
-      console.error('Error loading demo explainer:', error);
-      return '# Error loading demo information\n\nPlease try again later.';
-    }
+  // Function to check password for assistants
+  const checkPassword = (assistantId: string, password: string): boolean => {
+    if (!caseConfig) return false;
+    const assistant = caseConfig.assistants.find(a => a.id === assistantId);
+    return assistant?.password === password;
   };
 
-  // Function to check password
-  const checkPassword = (assistantId: string, password: string): boolean => {
-    if (!demoConfig) return false;
-    const assistant = demoConfig.assistants.find(a => a.id === assistantId);
-    return assistant?.password === password;
+  // Function to check case password
+  const checkCasePassword = (password: string): boolean => {
+    if (!caseConfig?.password) return true;
+    return caseConfig.password === password;
+  };
+
+  // Function to unlock the case
+  const unlockCase = () => {
+    if (checkCasePassword(casePassword)) {
+      setIsCaseUnlocked(true);
+      setPasswordError('');
+    } else {
+      setPasswordError('Incorrect password');
+    }
   };
 
   // Function to unlock an assistant
@@ -152,40 +141,37 @@ export default function DemoInterface() {
     setUnlockedAssistants(prev => new Set([...prev, assistantId]));
   };
 
-  // Fetch the demo configuration and load explainer markdown
+  // Fetch the case configuration
   useEffect(() => {
-    const fetchDemoConfig = async () => {
+    const fetchCaseConfig = async () => {
       try {
         setLoading(true);
         setError(null);
         
-        let config: DemoConfig | null = null;
+        let config: CaseConfig | null = null;
         
         // First try to fetch from the API
-        console.log(`Fetching demo config from API: ${demoId}`);
-        const response = await fetch(`/api/demos/${demoId}`);
+        console.log(`Fetching case config from API: ${caseId}`);
+        const response = await fetch(`/api/demos/${caseId}`);
         
         if (response.ok) {
           config = await response.json();
-          console.log(`Successfully fetched demo config from API: ${demoId}`);
-          setDemoConfig(config);
+          console.log(`Successfully fetched case config from API: ${caseId}`);
+          setCaseConfig(config);
         } else {
           // If not found in API, check static configs
-          console.log(`Checking static configs for demo: ${demoId}`);
-          if (demoConfigs[demoId]) {
-            config = demoConfigs[demoId];
-            setDemoConfig(config);
+          console.log(`Checking static configs for case: ${caseId}`);
+          if (staticCases[caseId]) {
+            config = staticCases[caseId];
+            setCaseConfig(config);
           } else {
-            console.error(`Demo not found in API or static configs: ${demoId}`);
-            setError('Demo not found');
+            console.error(`Case not found in API or static configs: ${caseId}`);
+            setError('Case not found');
           }
         }
 
-        // If we have a config, load the explainer markdown
+        // If we have a config, select an assistant
         if (config) {
-          const content = await loadExplainerMarkdown(config.id);
-          setMarkdownContent(content);
-          
           // Auto-select the first non-password-protected assistant
           const firstAvailableAssistant = config.assistants.find(assistant => !assistant.hasPassword);
           if (firstAvailableAssistant) {
@@ -196,15 +182,15 @@ export default function DemoInterface() {
           }
         }
       } catch (error) {
-        console.error('Error fetching demo:', error);
-        setError('An error occurred while loading the demo');
+        console.error('Error fetching case:', error);
+        setError('An error occurred while loading the case');
       } finally {
         setLoading(false);
       }
     };
     
-    fetchDemoConfig();
-  }, [demoId]);
+    fetchCaseConfig();
+  }, [caseId]);
 
   const handleAssistantClick = (assistant: Assistant) => {
     if (assistant.hasPassword && !unlockedAssistants.has(assistant.id)) {
@@ -215,25 +201,25 @@ export default function DemoInterface() {
     }
   };
 
-  // If demo is loading, show loading state
+  // If case is loading, show loading state
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-500 mx-auto"></div>
-          <p className="mt-4 text-gray-600 dark:text-gray-400">Loading demo...</p>
+          <p className="mt-4 text-gray-600 dark:text-gray-400">Loading case...</p>
         </div>
       </div>
     );
   }
 
-  // If demo doesn't exist, show error
-  if (error || !demoConfig) {
+  // If case doesn't exist, show error
+  if (error || !caseConfig) {
     return (
       <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center">
         <div className="text-center">
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-4">
-            {error || 'Demo Not Found'}
+            {error || 'Case Not Found'}
           </h1>
           <Link
             href="/"
@@ -247,7 +233,57 @@ export default function DemoInterface() {
     );
   }
 
-  const assistants = demoConfig.assistants;
+  // If case is password protected and not unlocked, show password form
+  if (caseConfig.hasPassword && !isCaseUnlocked) {
+    return (
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center">
+        <div className="bg-white dark:bg-gray-800 shadow-xl rounded-lg p-8 max-w-md w-full">
+          <div className="text-center mb-6">
+            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Protected Case</h1>
+            <p className="mt-2 text-gray-600 dark:text-gray-400">
+              This case is password protected. Please enter the password to continue.
+            </p>
+          </div>
+          
+          <div className="space-y-4">
+            <div>
+              <label htmlFor="case-password" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                Password
+              </label>
+              <input
+                id="case-password"
+                type="password"
+                value={casePassword}
+                onChange={(e) => setCasePassword(e.target.value)}
+                className="mt-1 px-4 py-2 block w-full rounded-md border border-gray-300 dark:border-gray-600 shadow-sm focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
+                placeholder="Enter password"
+              />
+              {passwordError && (
+                <p className="mt-2 text-sm text-red-600 dark:text-red-400">{passwordError}</p>
+              )}
+            </div>
+            
+            <div className="flex justify-between items-center">
+              <Link
+                href="/"
+                className="text-sm text-blue-500 hover:text-blue-600"
+              >
+                Back to Dashboard
+              </Link>
+              <button
+                onClick={unlockCase}
+                className="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+              >
+                Unlock Case
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const assistants = caseConfig.assistants;
 
   return (
     <div className="flex flex-col min-h-screen bg-gray-50 dark:bg-gray-900">
@@ -260,133 +296,94 @@ export default function DemoInterface() {
                 <ArrowLeftIcon className="h-5 w-5 text-gray-500 dark:text-gray-400" />
               </Link>
               <div className="flex-shrink-0">
-                {demoConfig?.icon ? (
-                  <DemoIcon icon={demoConfig.icon} name={demoConfig.title} size={32} />
+                {caseConfig?.icon ? (
+                  <DemoIcon icon={caseConfig.icon} name={caseConfig.title} size={32} />
                 ) : (
                   <div className="h-8 w-8 bg-blue-500 rounded-full"></div>
                 )}
               </div>
               <div className="ml-4">
                 <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
-                  {demoConfig.title}
+                  {caseConfig.title}
                 </h1>
               </div>
             </div>
             <div className="flex items-center space-x-4">
-              <span className="text-sm text-gray-500 dark:text-gray-400">By {demoConfig.author}</span>
+              <span className="text-sm text-gray-500 dark:text-gray-400">By {caseConfig.author}</span>
             </div>
           </div>
         </div>
       </header>
 
-      {/* Main Content - Split Screen */}
-      <div className="flex-1 flex flex-col md:flex-row">
-        {/* Left Side - Chat Interface */}
-        <div className="w-full md:w-1/2 flex flex-col">
-          {/* Fixed Assistant Selection Header */}
-          <div className="flex-none bg-white dark:bg-gray-800 p-4 border-b border-gray-200 dark:border-gray-700 sticky top-[72px] z-10">
-            <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">Assistants</h2>
-            <div className="flex flex-wrap gap-2">
-              {assistants.map((assistant) => {
-                const isUnlocked = unlockedAssistants.has(assistant.id);
-                const isSelected = selectedAssistant?.id === assistant.id;
-                const isLocked = assistant.hasPassword && !isUnlocked;
+      {/* Main Content */}
+      <div className="flex-1 flex flex-col">
+        {/* Assistant Selection Header */}
+        <div className="flex-none bg-white dark:bg-gray-800 p-4 border-b border-gray-200 dark:border-gray-700 sticky top-[72px] z-10">
+          <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">Assistants</h2>
+          <div className="flex flex-wrap gap-3">
+            {assistants.map((assistant) => {
+              const isUnlocked = unlockedAssistants.has(assistant.id);
+              const isSelected = selectedAssistant?.id === assistant.id;
+              const isLocked = assistant.hasPassword && !isUnlocked;
 
-                return (
-                  <div
-                    key={assistant.id}
-                    className={`relative ${
-                      isSelected
-                        ? 'bg-blue-100 dark:bg-blue-900'
-                        : isLocked
-                        ? 'bg-gray-100 dark:bg-gray-800 opacity-70'
-                        : 'bg-white dark:bg-gray-800'
-                    } rounded-lg shadow-md p-3 cursor-pointer transition-all duration-200`}
-                    onClick={() => !isLocked && handleAssistantClick(assistant)}
-                  >
-                    <div className="flex items-center">
-                      {assistant.icon ? (
-                        <DemoIcon key={`icon-${assistant.id}`} icon={assistant.icon} name={assistant.name} size={24} />
-                      ) : (
-                        <div key={`default-icon-${assistant.id}`} className="w-6 h-6 bg-gray-200 dark:bg-gray-700 rounded-full mr-2" />
-                      )}
-                      <span className="text-lg mr-2">{assistant.name}</span>
-                      {isLocked ? (
-                        <LockClosedIcon key={`lock-${assistant.id}`} className="h-4 w-4 text-gray-500" />
-                      ) : (
-                        <LockOpenIcon key={`unlock-${assistant.id}`} className="h-4 w-4 text-green-500" />
-                      )}
-                    </div>
-                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                      {assistant.description}
-                    </p>
-                    {isLocked && (
-                      <PasswordInput
-                        assistantId={assistant.id}
-                        onUnlock={unlockAssistant}
-                        checkPassword={checkPassword}
-                        onError={(error) => setPasswordError(error)}
-                      />
+              return (
+                <div
+                  key={assistant.id}
+                  className={`relative ${
+                    isSelected
+                      ? 'bg-blue-100 dark:bg-blue-900'
+                      : isLocked
+                      ? 'bg-gray-100 dark:bg-gray-800 opacity-70'
+                      : 'bg-white dark:bg-gray-800'
+                  } rounded-lg shadow-md p-3 cursor-pointer transition-all duration-200`}
+                  onClick={() => !isLocked && handleAssistantClick(assistant)}
+                >
+                  <div className="flex items-center">
+                    {assistant.icon ? (
+                      <DemoIcon key={`icon-${assistant.id}`} icon={assistant.icon} name={assistant.name} size={24} />
+                    ) : (
+                      <div key={`default-icon-${assistant.id}`} className="w-6 h-6 bg-gray-200 dark:bg-gray-700 rounded-full mr-2" />
+                    )}
+                    <span className="text-lg mr-2">{assistant.name}</span>
+                    {isLocked ? (
+                      <LockClosedIcon key={`lock-${assistant.id}`} className="h-4 w-4 text-gray-500" />
+                    ) : (
+                      <LockOpenIcon key={`unlock-${assistant.id}`} className="h-4 w-4 text-green-500" />
                     )}
                   </div>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Scrollable Chat Content */}
-          <div className="flex-1">
-            {selectedAssistant ? (
-              <StreamingDemo 
-                assistantId={selectedAssistant.id} 
-                assistantName={selectedAssistant.name}
-                demoId={demoConfig.id}
-                assistantIcon={selectedAssistant.icon}
-              />
-            ) : (
-              <div className="flex-1 bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 m-4 text-center">
-                <p className="text-gray-500 dark:text-gray-400">
-                  Select an assistant to start chatting
-                </p>
-              </div>
-            )}
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    {assistant.description}
+                  </p>
+                  {isLocked && (
+                    <PasswordInput
+                      assistantId={assistant.id}
+                      onUnlock={unlockAssistant}
+                      checkPassword={checkPassword}
+                      onError={(error) => setPasswordError(error)}
+                    />
+                  )}
+                </div>
+              );
+            })}
           </div>
         </div>
 
-        {/* Right Side - Fixed Markdown Documentation */}
-        <div className="hidden md:block fixed right-0 top-[72px] bottom-[60px] w-1/2 overflow-y-auto bg-white dark:bg-gray-800 border-l border-gray-200 dark:border-gray-700">
-          <div className="prose prose-sm md:prose-base lg:prose-lg dark:prose-invert max-w-none p-6">
-            <ReactMarkdown
-              remarkPlugins={[remarkGfm, remarkMath]}
-              rehypePlugins={[rehypeRaw, rehypeSanitize, rehypeKatex, rehypeHighlight]}
-              components={{
-                h1: ({node, ...props}) => <h1 className="text-3xl font-bold mt-8 mb-4" {...props} />,
-                h2: ({node, ...props}) => <h2 className="text-2xl font-semibold mt-6 mb-3" {...props} />,
-                h3: ({node, ...props}) => <h3 className="text-xl font-medium mt-4 mb-2" {...props} />,
-                p: ({node, ...props}) => <p className="my-4 leading-relaxed" {...props} />,
-                ul: ({node, ...props}) => <ul className="list-disc list-inside my-4 space-y-2" {...props} />,
-                ol: ({node, ...props}) => <ol className="list-decimal list-inside my-4 space-y-2" {...props} />,
-                li: ({node, ...props}) => <li className="ml-4" {...props} />,
-                code: ({className, children, ...props}: any) => {
-                  const isInline = !className?.includes('language-');
-                  return isInline ? (
-                    <code className="bg-gray-100 dark:bg-gray-800 rounded px-1 py-0.5 text-sm" {...props}>{children}</code>
-                  ) : (
-                    <code className="block bg-gray-100 dark:bg-gray-800 rounded p-4 my-4 overflow-x-auto text-sm" {...props}>{children}</code>
-                  );
-                },
-                pre: ({node, ...props}) => <pre className="bg-gray-100 dark:bg-gray-800 rounded p-4 my-4 overflow-x-auto" {...props} />,
-                blockquote: ({node, ...props}) => <blockquote className="border-l-4 border-gray-300 dark:border-gray-600 pl-4 my-4 italic" {...props} />,
-                a: ({node, ...props}) => <a className="text-blue-500 hover:text-blue-600 underline" {...props} />,
-                table: ({node, ...props}) => <div className="overflow-x-auto my-6"><table className="min-w-full divide-y divide-gray-300 dark:divide-gray-600" {...props} /></div>,
-                th: ({node, ...props}) => <th className="px-4 py-2 bg-gray-100 dark:bg-gray-800 font-semibold text-left" {...props} />,
-                td: ({node, ...props}) => <td className="px-4 py-2 border-t border-gray-200 dark:border-gray-700" {...props} />,
-                img: ({node, ...props}) => <img className="max-w-full h-auto rounded my-4" {...props} />
-              }}
-            >
-              {markdownContent}
-            </ReactMarkdown>
-          </div>
+        {/* Chat Content - Full Width */}
+        <div className="flex-1 w-full">
+          {selectedAssistant ? (
+            <StreamingChat 
+              assistantId={selectedAssistant.id} 
+              assistantName={selectedAssistant.name}
+              caseId={caseConfig.id}
+              assistantIcon={selectedAssistant.icon}
+            />
+          ) : (
+            <div className="flex-1 bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 m-4 text-center">
+              <p className="text-gray-500 dark:text-gray-400">
+                Select an assistant to start chatting
+              </p>
+            </div>
+          )}
         </div>
       </div>
 
@@ -395,7 +392,7 @@ export default function DemoInterface() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex justify-between items-center">
             <p className="text-sm text-gray-500 dark:text-gray-400">
-              © 2025 Noyes AI Demos. All rights reserved.
+              © 2025 AI Case Marketplace. All rights reserved.
             </p>
             <div className="flex space-x-4">
               <button className="text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300">
