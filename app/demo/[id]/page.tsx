@@ -3,10 +3,11 @@
 import { useState, useEffect } from 'react';
 import { useParams } from 'next/navigation';
 import StreamingChat from '../../components/StreamingChat';
-import { ArrowLeftIcon, LockClosedIcon, LockOpenIcon } from '@heroicons/react/24/outline';
+import { ArrowLeftIcon, LockClosedIcon, LockOpenIcon, DocumentTextIcon } from '@heroicons/react/24/outline';
 import Link from 'next/link';
 import DemoIcon from '../../components/DemoIcon';
 import PasswordInput from '../../components/PasswordInput';
+import DocumentViewer from '../../components/DocumentViewer';
 
 interface Assistant {
   id: string;
@@ -25,6 +26,13 @@ interface CaseConfig {
   hasPassword?: boolean;
   password?: string;
   assistants: Assistant[];
+  documents?: {
+    name: string;
+    description: string;
+    key: string;
+    type: string;
+    size: number;
+  }[];
 }
 
 // Static case configurations
@@ -112,6 +120,7 @@ export default function CaseInterface() {
   const [error, setError] = useState<string | null>(null);
   const [casePassword, setCasePassword] = useState<string>('');
   const [isCaseUnlocked, setIsCaseUnlocked] = useState<boolean>(false);
+  const [isDocumentViewerOpen, setIsDocumentViewerOpen] = useState(false);
 
   // Function to check password for assistants
   const checkPassword = (assistantId: string, password: string): boolean => {
@@ -309,6 +318,15 @@ export default function CaseInterface() {
               </div>
             </div>
             <div className="flex items-center space-x-4">
+              {caseConfig.documents && caseConfig.documents.length > 0 && (
+                <button
+                  onClick={() => setIsDocumentViewerOpen(true)}
+                  className="inline-flex items-center px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                >
+                  <DocumentTextIcon className="h-5 w-5 mr-2" />
+                  Case Documents
+                </button>
+              )}
               <span className="text-sm text-gray-500 dark:text-gray-400">By {caseConfig.author}</span>
             </div>
           </div>
@@ -405,6 +423,15 @@ export default function CaseInterface() {
           </div>
         </div>
       </footer>
+
+      {/* Document Viewer */}
+      {caseConfig.documents && (
+        <DocumentViewer
+          documents={caseConfig.documents}
+          isOpen={isDocumentViewerOpen}
+          onClose={() => setIsDocumentViewerOpen(false)}
+        />
+      )}
     </div>
   );
 } 

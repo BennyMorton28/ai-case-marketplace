@@ -17,7 +17,15 @@ export async function POST(req: Request) {
   try {
     const { prompt, messageHistory, assistantId, demoId: caseId } = await req.json();
 
+    console.log('Received request with:', {
+      prompt,
+      messageHistoryLength: messageHistory?.length,
+      assistantId,
+      caseId
+    });
+
     if (!prompt || !assistantId || !caseId) {
+      console.error('Missing required fields:', { prompt, assistantId, caseId });
       return NextResponse.json(
         { error: 'Missing required fields' },
         { status: 400 }
@@ -35,14 +43,18 @@ export async function POST(req: Request) {
       path.join(process.cwd(), 'assistants', `${assistantId}.md`)
     ];
 
+    console.log('Searching for markdown file in paths:', markdownPaths);
+
     for (const markdownPath of markdownPaths) {
       if (fs.existsSync(markdownPath)) {
         instructions = fs.readFileSync(markdownPath, 'utf-8');
+        console.log('Found instructions at:', markdownPath);
         break;
       }
     }
 
     if (!instructions) {
+      console.error('No instructions found for:', { caseId, assistantId });
       return NextResponse.json(
         { error: 'Assistant instructions not found' },
         { status: 404 }
@@ -50,7 +62,7 @@ export async function POST(req: Request) {
     }
 
     try {
-      // Prepare the conversation input array for OpenAI
+      // Format messages for the API request
       const formattedMessages: ConversationMessage[] = [
         {
           role: "system",

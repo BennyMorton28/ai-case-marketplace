@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
+import { ensureDirectoryExists, validatePathWritable, getSavePaths } from '../../lib/files';
+import { uploadToS3 } from '../../lib/s3';
 
 // List of static demo IDs that should be excluded from API results
 const staticDemoIds = ['math-assistant', 'writing-assistant', 'language-assistant', 'coding-assistant'];
@@ -11,58 +13,6 @@ const staticDemoIds = ['math-assistant', 'writing-assistant', 'language-assistan
  */
 function getBasePath(): string {
   return process.cwd();
-}
-
-// Helper function to ensure directories exist
-function ensureDirectoryExists(dirPath: string): void {
-  if (!fs.existsSync(dirPath)) {
-    console.log(`Creating directory: ${dirPath}`);
-    fs.mkdirSync(dirPath, { recursive: true });
-  } else {
-    console.log(`Directory already exists: ${dirPath}`);
-  }
-}
-
-// Helper function to validate a path is writable
-function validatePathWritable(filePath: string): boolean {
-  try {
-    const dirPath = path.dirname(filePath);
-    ensureDirectoryExists(dirPath);
-    
-    // Try to write a test file
-    const testPath = path.join(dirPath, '.write-test');
-    fs.writeFileSync(testPath, 'test');
-    fs.unlinkSync(testPath); // Clean up
-    return true;
-  } catch (error) {
-    console.error(`Path ${filePath} is not writable:`, error);
-    return false;
-  }
-}
-
-// Helper function to ensure both public and standalone directories exist
-function getSavePaths(): { publicPath: string, standalonePath: string | null } {
-  const basePath = getBasePath();
-  const publicPath = basePath;
-  
-  // Check if we're in production on the server
-  const isProduction = process.env.NODE_ENV === 'production';
-  const isServer = typeof window === 'undefined';
-  
-  if (isProduction && isServer) {
-    // Check if we're on the EC2 server
-    const isEC2 = basePath === '/home/ec2-user/app';
-    if (isEC2) {
-      // Also save to standalone directory
-      return {
-        publicPath,
-        standalonePath: '/home/ec2-user/app/.next/standalone'
-      };
-    }
-  }
-  
-  // In all other cases, only use publicPath
-  return { publicPath, standalonePath: null };
 }
 
 export async function GET() {
@@ -164,86 +114,85 @@ export async function POST(request: NextRequest) {
       demoData.icon = `demos/${demoData.id}/icon.svg`;
     }
 
-    // Save explainer markdown if provided (no longer required)
-    if (formData.has('explainer')) {
-      const explainerFile = formData.get('explainer') as File;
-      const explainerBuffer = Buffer.from(await explainerFile.arrayBuffer());
+    // Handle document uploads
+    const documents = [];
+    for (let i = 0; formData.has(`document_${i}`); i++) {
+      const file = formData.get(`document_${i}`) as File;
+      const fileBuffer = Buffer.from(await file.arrayBuffer());
+      
+      // Upload to S3
+      const s3Key = `cases/${demoData.id}/documents/${file.name}`;
+      await uploadToS3(fileBuffer, s3Key, file.type);
+      
+      // Add to documents array using metadata from demoData
+      const docMetadata = demoData.documents[i];
+      documents.push({
+        name: docMetadata.name,
+        description: docMetadata.description,
+        key: s3Key,
+        type: file.type,
+        size: file.size,
+        originalName: file.name
+      });
+    }
+    
+    // Add documents to demo data
+    demoData.documents = documents;
+
+    // Save markdown files for each assistant
+    for (const assistant of demoData.assistants) {
+      const markdownFile = formData.get(`markdown_${assistant.id}`) as File;
+      if (!markdownFile) {
+        console.error(`No markdown file found for assistant: ${assistant.id}`);
+        return new NextResponse(`Missing markdown file for assistant: ${assistant.name}`, { status: 400 });
+      }
+
+      const markdownBuffer = Buffer.from(await markdownFile.arrayBuffer());
       
       // Save to public directory
-      const explainerPath = path.join(demoDir, 'explainer.md');
-      fs.writeFileSync(explainerPath, explainerBuffer);
-      console.log(`Saved explainer markdown to: ${explainerPath}`);
+      const markdownPath = path.join(markdownDir, `${demoData.id}-${assistant.id}.md`);
+      fs.writeFileSync(markdownPath, markdownBuffer);
+      console.log(`Saved markdown to: ${markdownPath}`);
       
       // Also save to standalone directory if it exists
-      if (standaloneDemoDir) {
-        const standaloneExplainerPath = path.join(standaloneDemoDir, 'explainer.md');
-        fs.writeFileSync(standaloneExplainerPath, explainerBuffer);
-        console.log(`Also saved explainer markdown to standalone: ${standaloneExplainerPath}`);
-      }
-    }
-
-    // Save markdown files and icons for each assistant - to both locations
-    for (const assistant of demoData.assistants) {
-      // Save assistant markdown file
-      const markdownFile = formData.get(`markdown_${assistant.id}`) as File;
-      if (markdownFile) {
-        const markdownBuffer = Buffer.from(await markdownFile.arrayBuffer());
-        
-        // Save in public markdown directory with standardized naming
-        const publicMarkdownPath = path.join(markdownDir, `${demoData.id}-${assistant.id}.md`);
-        fs.writeFileSync(publicMarkdownPath, markdownBuffer);
-        console.log(`Saved assistant markdown to: ${publicMarkdownPath}`);
-        
-        // Also save to standalone directory if it exists
-        if (standaloneMarkdownDir) {
-          const standaloneMarkdownPath = path.join(standaloneMarkdownDir, `${demoData.id}-${assistant.id}.md`);
-          fs.writeFileSync(standaloneMarkdownPath, markdownBuffer);
-          console.log(`Also saved assistant markdown to standalone: ${standaloneMarkdownPath}`);
-        }
-      } else {
-        return new NextResponse(`Markdown file is required for assistant "${assistant.name}"`, { status: 400 });
+      if (standaloneMarkdownDir) {
+        const standaloneMarkdownPath = path.join(standaloneMarkdownDir, `${demoData.id}-${assistant.id}.md`);
+        fs.writeFileSync(standaloneMarkdownPath, markdownBuffer);
+        console.log(`Also saved markdown to standalone: ${standaloneMarkdownPath}`);
       }
 
-      // Save assistant icon if provided - to both locations
-      const assistantIconFile = formData.get(`icon_${assistant.id}`) as File;
-      if (assistantIconFile) {
-        const iconBuffer = Buffer.from(await assistantIconFile.arrayBuffer());
+      // Save assistant icon if provided
+      if (formData.has(`icon_${assistant.id}`)) {
+        const iconFile = formData.get(`icon_${assistant.id}`) as File;
+        const iconBuffer = Buffer.from(await iconFile.arrayBuffer());
         
-        // Create assistants directory if it doesn't exist in public
-        const assistantsDir = path.join(demoDir, 'assistants', assistant.id);
-        ensureDirectoryExists(assistantsDir);
-        
-        // Save the icon in the assistant's directory in public
-        const iconPath = path.join(assistantsDir, 'icon.svg');
+        // Save to public directory
+        const iconPath = path.join(demoDir, `icon_${assistant.id}.svg`);
         fs.writeFileSync(iconPath, iconBuffer);
         console.log(`Saved assistant icon to: ${iconPath}`);
         
         // Also save to standalone directory if it exists
         if (standaloneDemoDir) {
-          const standaloneAssistantsDir = path.join(standaloneDemoDir, 'assistants', assistant.id);
-          ensureDirectoryExists(standaloneAssistantsDir);
-          
-          const standaloneIconPath = path.join(standaloneAssistantsDir, 'icon.svg');
+          const standaloneIconPath = path.join(standaloneDemoDir, `icon_${assistant.id}.svg`);
           fs.writeFileSync(standaloneIconPath, iconBuffer);
           console.log(`Also saved assistant icon to standalone: ${standaloneIconPath}`);
         }
         
-        assistant.icon = `demos/${demoData.id}/assistants/${assistant.id}/icon.svg`;
+        assistant.icon = `demos/${demoData.id}/icon_${assistant.id}.svg`;
       }
     }
 
-    // Save demo configuration to both locations
+    // Save the final config
     fs.writeFileSync(demoConfigPath, JSON.stringify(demoData, null, 2));
     console.log(`Saved demo config to: ${demoConfigPath}`);
     
-    // Also save to standalone directory if it exists
     if (standaloneDemoDir) {
-      const standaloneDemoConfigPath = path.join(standaloneDemoDir, 'config.json');
-      fs.writeFileSync(standaloneDemoConfigPath, JSON.stringify(demoData, null, 2));
-      console.log(`Also saved demo config to standalone: ${standaloneDemoConfigPath}`);
+      const standaloneConfigPath = path.join(standaloneDemoDir, 'config.json');
+      fs.writeFileSync(standaloneConfigPath, JSON.stringify(demoData, null, 2));
+      console.log(`Also saved demo config to standalone: ${standaloneConfigPath}`);
     }
 
-    return new NextResponse(JSON.stringify({ success: true, demo: demoData }), {
+    return new NextResponse(JSON.stringify({ demo: demoData }), {
       headers: {
         'Content-Type': 'application/json',
       },

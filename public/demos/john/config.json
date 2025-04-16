@@ -1,0 +1,26 @@
+{
+  "id": "john",
+  "title": "John",
+  "author": "Benji",
+  "hasPassword": false,
+  "assistants": [
+    {
+      "id": "yano",
+      "name": "yano",
+      "description": "hi",
+      "hasPassword": false,
+      "icon": "demos/john/icon_yano.svg"
+    }
+  ],
+  "documents": [
+    {
+      "name": "Kellogg Letter",
+      "description": "",
+      "key": "cases/john/documents/Letter to Kellogg.docx",
+      "type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "size": 315437,
+      "originalName": "Letter to Kellogg.docx"
+    }
+  ],
+  "icon": "demos/john/icon.svg"
+}

@@ -5,6 +5,12 @@ import Modal from './Modal';
 import { useRouter } from 'next/navigation';
 import ProcessingDemoOverlay from './ProcessingDemoOverlay';
 
+interface CaseDocument {
+  file: File;
+  name: string;
+  description: string;
+}
+
 interface Assistant {
   id: string;
   name: string;
@@ -28,6 +34,14 @@ interface DemoData {
   author: string;
   hasPassword: boolean;
   password?: string;
+  documents: {
+    name: string;
+    description: string;
+    key?: string;
+    type?: string;
+    size?: number;
+    originalName?: string;
+  }[];
   assistants: {
     id: string;
     name: string;
@@ -44,6 +58,8 @@ export default function CreateDemoModal({ isOpen, onClose, onSave }: CreateDemoM
   const [hasPassword, setHasPassword] = useState(false);
   const [password, setPassword] = useState('');
   const [iconFile, setIconFile] = useState<File | null>(null);
+  const [documents, setDocuments] = useState<CaseDocument[]>([]);
+  const [isDragging, setIsDragging] = useState(false);
   const [assistants, setAssistants] = useState<Assistant[]>([{
     id: 'assistant-1',
     name: '',
@@ -58,6 +74,32 @@ export default function CreateDemoModal({ isOpen, onClose, onSave }: CreateDemoM
   // New state for processing overlay
   const [isProcessing, setIsProcessing] = useState(false);
   const [createdDemo, setCreatedDemo] = useState<{id: string, title: string} | null>(null);
+
+  const handleDragEnter = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+  };
+
+  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+  };
+
+  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+
+    const files = e.dataTransfer.files;
+    handleDocumentAdd(files);
+  };
 
   const generateAssistantId = (name: string) => {
     return name.toLowerCase().replace(/[^a-z0-9]+/g, '-');
@@ -117,6 +159,34 @@ export default function CreateDemoModal({ isOpen, onClose, onSave }: CreateDemoM
     setAssistants(newAssistants);
   };
 
+  const handleDocumentAdd = (files: FileList | null) => {
+    if (!files) return;
+    
+    const newDocuments = Array.from(files).map(file => ({
+      file,
+      name: file.name,
+      description: ''
+    }));
+    
+    setDocuments(prev => [...prev, ...newDocuments]);
+  };
+
+  const handleDocumentRemove = (index: number) => {
+    setDocuments(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const handleDocumentNameChange = (index: number, name: string) => {
+    setDocuments(prev => prev.map((doc, i) => 
+      i === index ? { ...doc, name } : doc
+    ));
+  };
+
+  const handleDocumentDescriptionChange = (index: number, description: string) => {
+    setDocuments(prev => prev.map((doc, i) => 
+      i === index ? { ...doc, description } : doc
+    ));
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
@@ -145,6 +215,10 @@ export default function CreateDemoModal({ isOpen, onClose, onSave }: CreateDemoM
           description: assistant.description,
           hasPassword: assistant.hasPassword,
           password: assistant.hasPassword ? assistant.password : undefined
+        })),
+        documents: documents.map(doc => ({
+          name: doc.name,
+          description: doc.description
         }))
       };
       
@@ -156,6 +230,11 @@ export default function CreateDemoModal({ isOpen, onClose, onSave }: CreateDemoM
       if (iconFile) {
         formData.append('icon', iconFile);
       }
+      
+      // Append documents
+      documents.forEach((doc, index) => {
+        formData.append(`document_${index}`, doc.file);
+      });
       
       // Append markdown files and icons for each assistant
       for (const assistant of assistants) {
@@ -314,7 +393,7 @@ export default function CreateDemoModal({ isOpen, onClose, onSave }: CreateDemoM
 
         {/* Icon Upload */}
         <div className="space-y-1">
-          <label className={labelClass} htmlFor="demo-icon">Case Icon (SVG)</label>
+          <label className={labelClass} htmlFor="demo-icon">Case Icon</label>
           <input
             id="demo-icon"
             type="file"
@@ -323,6 +402,66 @@ export default function CreateDemoModal({ isOpen, onClose, onSave }: CreateDemoM
             className={fileInputClass}
             aria-label="Upload case icon SVG file"
           />
+        </div>
+
+        {/* Case Documents Section */}
+        <div className="mt-6 p-4 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
+          <h3 className="text-lg font-medium text-gray-800 dark:text-white mb-4">Case Documents</h3>
+          <div 
+            className={`space-y-2 ${isDragging ? 'bg-blue-50 dark:bg-blue-900/30' : ''} transition-colors duration-200 rounded-lg p-4 border-2 border-dashed ${isDragging ? 'border-blue-500 dark:border-blue-400' : 'border-gray-300 dark:border-gray-600'}`}
+            onDragEnter={handleDragEnter}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+          >
+            <label className={`${labelClass} flex flex-col items-center justify-center cursor-pointer`}>
+              <span className="text-center mb-2">
+                Upload Documents
+                <span className="text-sm text-gray-500 ml-2">(PDF, Word, Excel, Images)</span>
+              </span>
+              <span className="text-sm text-gray-500 dark:text-gray-400">
+                Drag and drop files here or click to select
+              </span>
+              <input
+                type="file"
+                multiple
+                accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg"
+                onChange={(e) => handleDocumentAdd(e.target.files)}
+                className={`${fileInputClass} hidden`}
+                aria-label="Upload case documents"
+              />
+            </label>
+          </div>
+          
+          {/* Document List */}
+          {documents.length > 0 && (
+            <div className="space-y-3 mt-4">
+              {documents.map((doc, index) => (
+                <div key={index} className="flex items-start space-x-4 p-4 bg-white dark:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-600">
+                  <div className="flex-grow">
+                    <input
+                      type="text"
+                      value={doc.name}
+                      onChange={(e) => handleDocumentNameChange(index, e.target.value)}
+                      placeholder="Document name"
+                      className={`${inputClass} text-sm`}
+                    />
+                    <div className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                      Original: {doc.file.name} ({(doc.file.size / 1024 / 1024).toFixed(2)} MB)
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleDocumentRemove(index)}
+                    className="text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
+                    aria-label="Remove document"
+                  >
+                    <TrashIcon className="h-5 w-5" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Assistant Fields */}

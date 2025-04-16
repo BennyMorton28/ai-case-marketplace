@@ -105,10 +105,7 @@ export default function StreamingChat({ assistantId, assistantName, caseId, assi
     setError(null);
     
     // Add user message immediately
-    setMessages(prev => {
-      const newMessages: Message[] = [...prev, { type: 'user' as const, content: input }];
-      return newMessages;
-    });
+    setMessages(prev => [...prev, { type: 'user', content: input }]);
     const currentInput = input;
     setInput(''); // Clear input right away
 
@@ -127,7 +124,7 @@ export default function StreamingChat({ assistantId, assistantName, caseId, assi
         content: msg.content
       }));
       
-      // Add the current message
+      // Add the current message (this was already added to the messages state but not included in our messageHistory yet)
       messageHistory.push({
         role: 'user',
         content: currentInput
@@ -146,10 +143,8 @@ export default function StreamingChat({ assistantId, assistantName, caseId, assi
         }),
         signal: abortControllerRef.current.signal,
       });
-      
+
       if (!response.ok) {
-        const errorText = await response.text();
-        console.error('Error response:', errorText);
         throw new Error(`HTTP error! status: ${response.status}`);
       }
 
@@ -159,10 +154,7 @@ export default function StreamingChat({ assistantId, assistantName, caseId, assi
       }
 
       // Add assistant message placeholder
-      setMessages(prev => {
-        const newMessages: Message[] = [...prev, { type: 'assistant' as const, content: '' }];
-        return newMessages;
-      });
+      setMessages(prev => [...prev, { type: 'assistant', content: '' }]);
 
       const decoder = new TextDecoder();
       let accumulatedResponse = '';
@@ -178,14 +170,13 @@ export default function StreamingChat({ assistantId, assistantName, caseId, assi
           if (line.startsWith('data: ')) {
             try {
               const data = JSON.parse(line.slice(6)) as StreamingResponse;
-              if (data.delta) {
-                accumulatedResponse += data.delta;
-                setMessages(prev => {
-                  const newMessages = [...prev];
-                  newMessages[newMessages.length - 1].content = accumulatedResponse;
-                  return newMessages;
-                });
-              }
+              accumulatedResponse += data.delta;
+              // Update the last message (which is the assistant's response)
+              setMessages(prev => {
+                const newMessages = [...prev];
+                newMessages[newMessages.length - 1].content = accumulatedResponse;
+                return newMessages;
+              });
             } catch (e) {
               console.error('Error parsing streaming data:', e);
             }
@@ -194,14 +185,16 @@ export default function StreamingChat({ assistantId, assistantName, caseId, assi
       }
     } catch (err) {
       if (err instanceof Error && err.name === 'AbortError') {
-        // Silently handle aborted requests
+        console.log('Request was aborted');
       } else {
-        console.error('Error in handleSubmit:', err);
         setError(err instanceof Error ? err.message : 'An error occurred');
+        console.error('Streaming error:', err);
       }
     } finally {
       setIsLoading(false);
       abortControllerRef.current = null;
+      
+      // No focus management needed
     }
   };
 
@@ -576,8 +569,8 @@ export default function StreamingChat({ assistantId, assistantName, caseId, assi
       {/* Chat Messages - Scrollable area */}
       <div 
         ref={chatContainerRef}
-        className="flex-1 overflow-y-auto px-4 py-4 space-y-4 bg-gray-50 dark:bg-gray-900"
-        style={{ paddingBottom: '120px' }}
+        className="absolute top-[72px] bottom-[60px] left-0 right-0 overflow-y-auto px-4 py-4 space-y-4 bg-gray-50 dark:bg-gray-900"
+        style={{ paddingBottom: '80px' }}
       >
         {messages.map((message, index) => (
           <div
@@ -633,8 +626,8 @@ export default function StreamingChat({ assistantId, assistantName, caseId, assi
         <div ref={messagesEndRef} className="h-[20px]" />
       </div>
 
-      {/* Input Box - Fixed above bottom bar */}
-      <div className="fixed left-0 right-0 bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 p-4" style={{ bottom: '60px', zIndex: 10 }}>
+      {/* Input Box - Fixed at bottom, using full width */}
+      <div className="fixed bottom-[60px] left-0 right-0 bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 p-4">
         <div className="max-w-7xl mx-auto">
           <form onSubmit={handleSubmit} className="flex gap-2 w-full">
             <input
