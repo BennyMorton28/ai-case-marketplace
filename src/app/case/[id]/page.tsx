@@ -1,11 +1,11 @@
-import { useCaseStore } from '@/store/caseStore';
-import { useState } from 'react';
-import { ChatInterface } from '@/components/case/ChatInterface';
-import { AssistantSelector } from '@/components/case/AssistantSelector';
-import { MarkdownViewer } from '@/components/case/MarkdownViewer';
-import { PasswordModal } from '@/components/case/PasswordModal';
-import { Layout } from '@/components/common/Layout';
-import { Case, Assistant } from '@/types';
+import React, { useState } from 'react';
+import { useCaseStore } from '../../../store/caseStore';
+import { ChatInterface } from '../../../components/case/ChatInterface';
+import { AssistantSelector } from '../../../components/case/AssistantSelector';
+import { MarkdownViewer } from '../../../components/case/MarkdownViewer';
+import { PasswordModal } from '../../../components/case/PasswordModal';
+import { Layout } from '../../../components/common/Layout';
+import { Case, Assistant } from '../../../types';
 
 interface CasePageProps {
   params: {

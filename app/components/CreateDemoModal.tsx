@@ -18,7 +18,7 @@ interface Assistant {
   icon?: string;
   hasPassword: boolean;
   password?: string;
-  markdownFile?: File;
+  promptContent?: string;
   iconFile?: File;
 }
 
@@ -65,10 +65,8 @@ export default function CreateDemoModal({ isOpen, onClose, onSave }: CreateDemoM
     name: '',
     description: '',
     hasPassword: false,
-    markdownFile: undefined,
-    iconFile: undefined
+    promptContent: ''
   }]);
-  const [markdownFiles, setMarkdownFiles] = useState<Record<string, File>>({});
   const fileInputRef = useRef<HTMLInputElement>(null);
   
   // New state for processing overlay
@@ -112,16 +110,6 @@ export default function CreateDemoModal({ isOpen, onClose, onSave }: CreateDemoM
     }
   };
 
-  const handleMarkdownChange = (assistantId: string, e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      setMarkdownFiles(prev => ({
-        ...prev,
-        [assistantId]: file
-      }));
-    }
-  };
-
   const handleAssistantChange = (index: number, field: keyof Assistant, value: any) => {
     const newAssistants = [...assistants];
     newAssistants[index] = {
@@ -148,15 +136,6 @@ export default function CreateDemoModal({ isOpen, onClose, onSave }: CreateDemoM
       };
       setAssistants(newAssistants);
     }
-  };
-
-  const handleMarkdownFileChange = (index: number, file: File | null) => {
-    const newAssistants = [...assistants];
-    newAssistants[index] = {
-      ...newAssistants[index],
-      markdownFile: file || undefined
-    };
-    setAssistants(newAssistants);
   };
 
   const handleDocumentAdd = (files: FileList | null) => {
@@ -195,6 +174,13 @@ export default function CreateDemoModal({ isOpen, onClose, onSave }: CreateDemoM
       if (assistants.length === 0) {
         throw new Error('At least one assistant is required');
       }
+
+      // Validate prompt content
+      for (const assistant of assistants) {
+        if (!assistant.promptContent?.trim()) {
+          throw new Error(`Prompt content is required for assistant "${assistant.name}"`);
+        }
+      }
       
       // Process demoId
       const demoId = title.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
@@ -214,7 +200,8 @@ export default function CreateDemoModal({ isOpen, onClose, onSave }: CreateDemoM
           name: assistant.name,
           description: assistant.description,
           hasPassword: assistant.hasPassword,
-          password: assistant.hasPassword ? assistant.password : undefined
+          password: assistant.hasPassword ? assistant.password : undefined,
+          promptContent: assistant.promptContent
         })),
         documents: documents.map(doc => ({
           name: doc.name,
@@ -236,13 +223,11 @@ export default function CreateDemoModal({ isOpen, onClose, onSave }: CreateDemoM
         formData.append(`document_${index}`, doc.file);
       });
       
-      // Append markdown files and icons for each assistant
+      // Append prompt content for each assistant
       for (const assistant of assistants) {
-        const markdownFile = assistant.markdownFile;
-        if (markdownFile) {
-          formData.append(`markdown_${assistant.id}`, markdownFile);
-        } else {
-          throw new Error(`Markdown file is required for assistant "${assistant.name}"`);
+        if (assistant.promptContent) {
+          const blob = new Blob([assistant.promptContent], { type: 'text/markdown' });
+          formData.append(`markdown_${assistant.id}`, blob, `${assistant.id}.md`);
         }
 
         // Append assistant icon if provided
@@ -274,8 +259,7 @@ export default function CreateDemoModal({ isOpen, onClose, onSave }: CreateDemoM
         name: '',
         description: '',
         hasPassword: false,
-        markdownFile: undefined,
-        iconFile: undefined
+        promptContent: ''
       }]);
       
       // Close the modal
@@ -506,16 +490,23 @@ export default function CreateDemoModal({ isOpen, onClose, onSave }: CreateDemoM
               </div>
               
               <div className="space-y-1">
-                <label className={labelClass} htmlFor={`markdown-file-${index}`}>Markdown Content</label>
-                <input
-                  id={`markdown-file-${index}`}
-                  type="file"
-                  accept=".md,text/markdown"
-                  onChange={(e) => handleMarkdownFileChange(index, e.target.files?.[0] || null)}
-                  className={fileInputClass}
-                  required
-                  aria-label={`Upload markdown content for assistant ${assistant.name || index+1}`}
-                />
+                <label 
+                  htmlFor={`promptContent-${assistant.id}`} 
+                  className="block text-sm font-medium text-gray-700 dark:text-gray-300"
+                >
+                  Prompt Content
+                </label>
+                <div className="mt-2">
+                  <textarea
+                    id={`promptContent-${assistant.id}`}
+                    name={`promptContent-${assistant.id}`}
+                    rows={10}
+                    className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-700 dark:text-white font-mono text-sm"
+                    value={assistant.promptContent}
+                    onChange={(e) => handleAssistantChange(index, 'promptContent', e.target.value)}
+                    placeholder="Enter the prompt content for this assistant..."
+                  />
+                </div>
               </div>
               
               <div className="flex items-center mt-4">
@@ -569,7 +560,8 @@ export default function CreateDemoModal({ isOpen, onClose, onSave }: CreateDemoM
               id: `assistant-${assistants.length + 1}`,
               name: '',
               description: '',
-              hasPassword: false
+              hasPassword: false,
+              promptContent: ''
             }])}
             className="mt-2 inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition duration-150 ease-in-out"
           >

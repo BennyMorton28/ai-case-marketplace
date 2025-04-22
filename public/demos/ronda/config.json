@@ -1,6 +1,6 @@
 {
   "id": "ronda",
-  "title": "Ronda",
+  "title": "Honda",
   "author": "Rousey",
   "assistants": [
     {
@@ -8,7 +8,7 @@
       "name": "Wendy",
       "description": "Nuts",
       "hasPassword": false,
-      "icon": "demos/ronda/assistants/wendy/icon.svg"
+      "iconPath": "demos/ronda/assistants/wendy/icon.svg"
     },
     {
       "id": "frido",
@@ -16,8 +16,10 @@
       "description": "hot dogs",
       "hasPassword": true,
       "password": "pickles",
-      "icon": "demos/ronda/assistants/frido/icon.svg"
+      "iconPath": "demos/ronda/assistants/frido/icon.svg"
     }
   ],
-  "icon": "demos/ronda/icon.svg"
+  "iconPath": "demos/ronda/icon.svg",
+  "updatedAt": "2025-04-21T18:57:12.676Z"
+}
 }

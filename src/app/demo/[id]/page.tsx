@@ -1,9 +1,9 @@
 import { useDemoStore } from '@/store/demoStore';
-import { Layout } from '@/components/common/Layout';
-import { ChatInterface } from '@/components/demo/ChatInterface';
-import { AssistantSelector } from '@/components/demo/AssistantSelector';
-import { MarkdownViewer } from '@/components/demo/MarkdownViewer';
-import { PasswordModal } from '@/components/demo/PasswordModal';
+import { Layout } from '../../../components/common/Layout';
+import { ChatInterface } from '../../../components/demo/ChatInterface';
+import { AssistantSelector } from '../../../components/demo/AssistantSelector';
+import { MarkdownViewer } from '../../../components/demo/MarkdownViewer';
+import { PasswordModal } from '../../../components/demo/PasswordModal';
 import { useState } from 'react';
 import { Assistant } from '@/types';
 

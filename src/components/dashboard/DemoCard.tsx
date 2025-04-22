@@ -1,4 +1,5 @@
-import { Demo } from '@/types';
+import React from 'react';
+import { Demo } from '../../types';
 import Link from 'next/link';
 import Image from 'next/image';
 
@@ -11,9 +12,9 @@ export const DemoCard = ({ demo }: DemoCardProps) => {
     <Link href={`/demo/${demo.id}`}>
       <div className="bg-white rounded-lg shadow-md hover:shadow-lg transition-shadow p-4">
         <div className="aspect-square relative mb-4">
-          {demo.iconPath ? (
+          {(demo.iconUrl || demo.iconPath) ? (
             <Image
-              src={demo.iconPath}
+              src={(demo.iconUrl || demo.iconPath) as string}
               alt={demo.name}
               fill
               className="object-cover rounded-lg"
@@ -31,4 +32,5 @@ export const DemoCard = ({ demo }: DemoCardProps) => {
       </div>
     </Link>
   );
+}; 
 }; 

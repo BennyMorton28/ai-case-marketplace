@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
 import { ensureDirectoryExists, validatePathWritable, getSavePaths } from '../../lib/files';
-import { uploadToS3 } from '../../lib/s3';
+import { uploadToS3, s3Client, BUCKET_NAME, getSignedDownloadUrl } from '../../lib/s3';
+import { ListObjectsV2Command, GetObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3';
 
 // List of static demo IDs that should be excluded from API results
 const staticDemoIds = ['math-assistant', 'writing-assistant', 'language-assistant', 'coding-assistant'];
@@ -17,30 +18,71 @@ function getBasePath(): string {
 
 export async function GET() {
   try {
-    // Get all dynamic demos from the public/demos directory
-    const demosDir = path.join(getBasePath(), 'public', 'demos');
-    const dynamicDemos = [];
+    const listCommand = new ListObjectsV2Command({
+      Bucket: BUCKET_NAME,
+      Prefix: 'demos/',
+      Delimiter: '/'
+    });
 
-    if (fs.existsSync(demosDir)) {
-      const demoFolders = fs.readdirSync(demosDir);
-      
-      for (const folder of demoFolders) {
-        // Skip static demo folders
-        if (staticDemoIds.includes(folder)) continue;
-        
-        const configPath = path.join(demosDir, folder, 'config.json');
-        if (fs.existsSync(configPath)) {
-          const configData = fs.readFileSync(configPath, 'utf-8');
-          const config = JSON.parse(configData);
-          dynamicDemos.push(config);
+    const { CommonPrefixes } = await s3Client.send(listCommand);
+    if (!CommonPrefixes) {
+      return new NextResponse(JSON.stringify([]), {
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
+    const demos = [];
+    for (const prefix of CommonPrefixes) {
+      if (!prefix.Prefix) continue;
+      const demoId = prefix.Prefix.split('/')[1];
+      if (staticDemoIds.includes(demoId)) continue;
+
+      try {
+        // Check if config.json exists first
+        const configKey = `${prefix.Prefix}config.json`;
+        try {
+          await s3Client.send(new HeadObjectCommand({
+            Bucket: BUCKET_NAME,
+            Key: configKey
+          }));
+        } catch {
+          // Skip this demo if config.json doesn't exist
+          continue;
         }
+
+        // Get the config.json for this demo
+        const configCommand = new GetObjectCommand({
+          Bucket: BUCKET_NAME,
+          Key: configKey
+        });
+
+        const configResponse = await s3Client.send(configCommand);
+        if (!configResponse.Body) continue;
+
+        const configText = await configResponse.Body.transformToString();
+        const config = JSON.parse(configText);
+
+        if (config.iconPath) {
+          config.iconUrl = await getSignedDownloadUrl(config.iconPath);
+        }
+
+        if (config.assistants) {
+          for (const assistant of config.assistants) {
+            if (assistant.iconPath) {
+              assistant.iconUrl = await getSignedDownloadUrl(assistant.iconPath);
+            }
+          }
+        }
+
+        demos.push(config);
+      } catch (error: any) {
+        console.error(`Error processing demo ${demoId}:`, error?.message || 'Unknown error');
+        continue;
       }
     }
 
-    return new NextResponse(JSON.stringify(dynamicDemos), {
-      headers: {
-        'Content-Type': 'application/json',
-      },
+    return new NextResponse(JSON.stringify(demos), {
+      headers: { 'Content-Type': 'application/json' },
     });
   } catch (error) {
     console.error('Error listing demos:', error);
@@ -63,55 +105,35 @@ export async function POST(request: NextRequest) {
       return new NextResponse('Password is required when case is locked', { status: 400 });
     }
 
-    // Get the paths for saving files
-    const { publicPath, standalonePath } = getSavePaths();
-    console.log(`Using paths: publicPath=${publicPath}, standalonePath=${standalonePath || 'none'} for case creation`);
-
-    // Create necessary directories in the public path
-    const demoDir = path.join(publicPath, 'public', 'demos', demoData.id);
-    const markdownDir = path.join(publicPath, 'public', 'markdown');
-    
-    // Use our helper function to create directories
-    ensureDirectoryExists(demoDir);
-    ensureDirectoryExists(markdownDir);
-    
-    // If we have a standalone path, also create directories there
-    let standaloneDemoDir: string | null = null;
-    let standaloneMarkdownDir: string | null = null;
-    
-    if (standalonePath) {
-      standaloneDemoDir = path.join(standalonePath, 'public', 'demos', demoData.id);
-      standaloneMarkdownDir = path.join(standalonePath, 'public', 'markdown');
-      
-      ensureDirectoryExists(standaloneDemoDir);
-      ensureDirectoryExists(standaloneMarkdownDir);
-    }
-    
-    // Validate that critical paths are writable
-    const demoConfigPath = path.join(demoDir, 'config.json');
-    if (!validatePathWritable(demoConfigPath)) {
-      console.error(`Cannot write to demo config path: ${demoConfigPath}`);
-      return new NextResponse('Server file access error', { status: 500 });
-    }
-
-    // Save demo icon if provided - to both locations
+    // Save demo icon if provided
     if (formData.has('icon')) {
       const iconFile = formData.get('icon') as File;
       const iconBuffer = Buffer.from(await iconFile.arrayBuffer());
+      const extension = iconFile.type.startsWith('image/svg') ? '.svg' : iconFile.name.split('.').pop() || '.png';
+      const iconPath = `demos/${demoData.id}/icon${extension}`;
       
-      // Save to public directory
-      const iconPath = path.join(demoDir, 'icon.svg');
-      fs.writeFileSync(iconPath, iconBuffer);
-      console.log(`Saved demo icon to: ${iconPath}`);
+      await uploadToS3(
+        iconBuffer,
+        iconPath,
+        iconFile.type
+      );
       
-      // Also save to standalone directory if it exists
-      if (standaloneDemoDir) {
-        const standaloneIconPath = path.join(standaloneDemoDir, 'icon.svg');
-        fs.writeFileSync(standaloneIconPath, iconBuffer);
-        console.log(`Also saved demo icon to standalone: ${standaloneIconPath}`);
-      }
+      demoData.iconPath = iconPath;
+    } else {
+      // Create default icon
+      const defaultIconContent = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="10"/>
+        <text x="50%" y="50%" text-anchor="middle" dy=".3em" font-size="12">${demoData.title[0]}</text>
+      </svg>`;
       
-      demoData.icon = `demos/${demoData.id}/icon.svg`;
+      const iconPath = `demos/${demoData.id}/icon.svg`;
+      await uploadToS3(
+        Buffer.from(defaultIconContent),
+        iconPath,
+        'image/svg+xml'
+      );
+      
+      demoData.iconPath = iconPath;
     }
 
     // Handle document uploads
@@ -120,76 +142,98 @@ export async function POST(request: NextRequest) {
       const file = formData.get(`document_${i}`) as File;
       const fileBuffer = Buffer.from(await file.arrayBuffer());
       
-      // Upload to S3
-      const s3Key = `cases/${demoData.id}/documents/${file.name}`;
+      const s3Key = `demos/${demoData.id}/documents/${file.name}`;
       await uploadToS3(fileBuffer, s3Key, file.type);
       
-      // Add to documents array using metadata from demoData
       const docMetadata = demoData.documents[i];
       documents.push({
+        id: docMetadata.id,
         name: docMetadata.name,
-        description: docMetadata.description,
-        key: s3Key,
-        type: file.type,
-        size: file.size,
-        originalName: file.name
+        path: s3Key
       });
     }
     
-    // Add documents to demo data
     demoData.documents = documents;
 
     // Save markdown files for each assistant
     for (const assistant of demoData.assistants) {
-      const markdownFile = formData.get(`markdown_${assistant.id}`) as File;
-      if (!markdownFile) {
-        console.error(`No markdown file found for assistant: ${assistant.id}`);
-        return new NextResponse(`Missing markdown file for assistant: ${assistant.name}`, { status: 400 });
+      // Get the prompt content from the assistant data
+      const promptContent = assistant.promptContent;
+      if (!promptContent) {
+        console.error(`No prompt content found for assistant: ${assistant.id}`);
+        return new NextResponse(`Missing prompt content for assistant: ${assistant.name}`, { status: 400 });
       }
 
-      const markdownBuffer = Buffer.from(await markdownFile.arrayBuffer());
+      const promptMarkdownPath = `demos/${demoData.id}/markdown/${assistant.id}.md`;
+      await uploadToS3(
+        Buffer.from(promptContent),
+        promptMarkdownPath,
+        'text/markdown'
+      );
       
-      // Save to public directory
-      const markdownPath = path.join(markdownDir, `${demoData.id}-${assistant.id}.md`);
-      fs.writeFileSync(markdownPath, markdownBuffer);
-      console.log(`Saved markdown to: ${markdownPath}`);
-      
-      // Also save to standalone directory if it exists
-      if (standaloneMarkdownDir) {
-        const standaloneMarkdownPath = path.join(standaloneMarkdownDir, `${demoData.id}-${assistant.id}.md`);
-        fs.writeFileSync(standaloneMarkdownPath, markdownBuffer);
-        console.log(`Also saved markdown to standalone: ${standaloneMarkdownPath}`);
-      }
+      assistant.promptMarkdownPath = promptMarkdownPath;
 
       // Save assistant icon if provided
       if (formData.has(`icon_${assistant.id}`)) {
         const iconFile = formData.get(`icon_${assistant.id}`) as File;
         const iconBuffer = Buffer.from(await iconFile.arrayBuffer());
+        const extension = iconFile.type.startsWith('image/svg') ? '.svg' : iconFile.name.split('.').pop() || '.png';
+        const iconPath = `demos/${demoData.id}/assistants/${assistant.id}/icon${extension}`;
         
-        // Save to public directory
-        const iconPath = path.join(demoDir, `icon_${assistant.id}.svg`);
-        fs.writeFileSync(iconPath, iconBuffer);
-        console.log(`Saved assistant icon to: ${iconPath}`);
+        await uploadToS3(
+          iconBuffer,
+          iconPath,
+          iconFile.type
+        );
         
-        // Also save to standalone directory if it exists
-        if (standaloneDemoDir) {
-          const standaloneIconPath = path.join(standaloneDemoDir, `icon_${assistant.id}.svg`);
-          fs.writeFileSync(standaloneIconPath, iconBuffer);
-          console.log(`Also saved assistant icon to standalone: ${standaloneIconPath}`);
-        }
+        assistant.iconPath = iconPath;
+      } else {
+        // Create default assistant icon
+        const defaultIconContent = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="10"/>
+          <text x="50%" y="50%" text-anchor="middle" dy=".3em" font-size="12">${assistant.name[0]}</text>
+        </svg>`;
         
-        assistant.icon = `demos/${demoData.id}/icon_${assistant.id}.svg`;
+        const iconPath = `demos/${demoData.id}/assistants/${assistant.id}/icon.svg`;
+        await uploadToS3(
+          Buffer.from(defaultIconContent),
+          iconPath,
+          'image/svg+xml'
+        );
+        
+        assistant.iconPath = iconPath;
       }
     }
 
-    // Save the final config
-    fs.writeFileSync(demoConfigPath, JSON.stringify(demoData, null, 2));
-    console.log(`Saved demo config to: ${demoConfigPath}`);
-    
-    if (standaloneDemoDir) {
-      const standaloneConfigPath = path.join(standaloneDemoDir, 'config.json');
-      fs.writeFileSync(standaloneConfigPath, JSON.stringify(demoData, null, 2));
-      console.log(`Also saved demo config to standalone: ${standaloneConfigPath}`);
+    // Add timestamps and explanation markdown path
+    demoData.createdAt = new Date().toISOString();
+    demoData.updatedAt = new Date().toISOString();
+    demoData.explanationMarkdownPath = `demos/${demoData.id}/markdown/explanation.md`;
+
+    // Create default explanation markdown
+    const defaultExplanation = `# ${demoData.title}\n\nWelcome to ${demoData.title}!`;
+    await uploadToS3(
+      Buffer.from(defaultExplanation),
+      demoData.explanationMarkdownPath,
+      'text/markdown'
+    );
+
+    // Save the final config to S3
+    await uploadToS3(
+      Buffer.from(JSON.stringify(demoData, null, 2)),
+      `demos/${demoData.id}/config.json`,
+      'application/json'
+    );
+
+    // Get signed URLs for icons
+    if (demoData.iconPath) {
+      demoData.iconUrl = await getSignedDownloadUrl(demoData.iconPath);
+    }
+
+    for (const assistant of demoData.assistants) {
+      if (assistant.iconPath) {
+        assistant.iconUrl = await getSignedDownloadUrl(assistant.iconPath);
+      }
     }
 
     return new NextResponse(JSON.stringify({ demo: demoData }), {

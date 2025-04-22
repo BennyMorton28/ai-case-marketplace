@@ -527,7 +527,7 @@ export default function StreamingChat({ assistantId, assistantName, caseId, assi
             )}
             <div>
               <h2 className="text-lg font-medium text-gray-900 dark:text-white">{assistantName}</h2>
-              <p className="text-sm text-gray-500 dark:text-gray-400">Your AI assistant</p>
+              <p className="text-sm text-gray-500 dark:text-gray-400">Your AI character</p>
             </div>
           </div>
           <div className="flex space-x-2">

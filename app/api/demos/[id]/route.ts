@@ -1,40 +1,55 @@
 import { NextRequest, NextResponse } from 'next/server';
-import fs from 'fs/promises';  // Using fs.promises for async operations
-import fsSync from 'fs'; // Sync operations for path checks
+import fs from 'fs';
 import path from 'path';
-import { removeSync } from 'fs-extra'; // We'll use fs-extra for directory removal
+import { getSavePaths } from '../../../lib/files';
+import { s3Client, BUCKET_NAME, getSignedDownloadUrl, uploadToS3 } from '../../../lib/s3';
+import { GetObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 
-/**
- * Helper function to get the correct file path in both development and production environments
- * In both development and production, we use process.cwd() which should point to the correct location
- */
-function getBasePath(): string {
-  return process.cwd();
-}
+// List of static demo IDs that should be protected
+const staticDemoIds = ['math-assistant', 'writing-assistant', 'language-assistant', 'coding-assistant'];
 
 export async function GET(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
   try {
-    // Properly await the params object
-    const { id: demoId } = await Promise.resolve(params);
-    
-    if (!demoId) {
-      return new NextResponse('Demo ID is required', { status: 400 });
+    const demoId = params.id;
+
+    // For static demos, use local filesystem
+    if (staticDemoIds.includes(demoId)) {
+      // ... existing code for static demos ...
+      return new NextResponse('Static demos not implemented', { status: 501 });
     }
 
-    // Use the correct base path
-    const basePath = getBasePath();
-
-    // Try to load the demo config
-    const configPath = path.join(basePath, 'public', 'demos', demoId, 'config.json');
-    
+    // For dynamic demos, fetch from S3
     try {
-      // Using async fs operations
-      await fs.access(configPath);
-      const configData = await fs.readFile(configPath, 'utf-8');
-      const config = JSON.parse(configData);
+      const configKey = `demos/${demoId}/config.json`;
+      const command = new GetObjectCommand({
+        Bucket: BUCKET_NAME,
+        Key: configKey
+      });
+
+      const response = await s3Client.send(command);
+      if (!response.Body) {
+        return new NextResponse('Demo not found', { status: 404 });
+    }
+
+      const configText = await response.Body.transformToString();
+      const config = JSON.parse(configText);
+
+      // Get signed URLs for icons
+      if (config.iconPath) {
+        config.iconUrl = await getSignedDownloadUrl(config.iconPath);
+      }
+
+      // Get signed URLs for assistant icons
+      if (config.assistants) {
+        for (const assistant of config.assistants) {
+          if (assistant.iconPath) {
+            assistant.iconUrl = await getSignedDownloadUrl(assistant.iconPath);
+          }
+        }
+      }
 
       return new NextResponse(JSON.stringify(config), {
         headers: {
@@ -42,12 +57,49 @@ export async function GET(
         },
       });
     } catch (error) {
-      // If file doesn't exist, try loading from static config
+      console.error('Error fetching demo from S3:', error);
       return new NextResponse('Demo not found', { status: 404 });
     }
   } catch (error) {
-    console.error('Error reading demo config:', error);
-    return new NextResponse('Error reading demo config', { status: 500 });
+    console.error('Error getting demo:', error);
+    return new NextResponse('Error getting demo', { status: 500 });
+  }
+}
+
+export async function PUT(
+  request: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  try {
+    const demoId = params.id;
+    const updatedDemo = await request.json();
+
+    // Validate the demo ID matches
+    if (demoId !== updatedDemo.id) {
+      return new NextResponse('Demo ID mismatch', { status: 400 });
+    }
+
+    // Update timestamps
+    updatedDemo.updatedAt = new Date().toISOString();
+
+    // Save to S3
+    const s3Key = `demos/${demoId}/config.json`;
+    console.log('Updating demo config in S3:', s3Key);
+    
+    await uploadToS3(
+      Buffer.from(JSON.stringify(updatedDemo, null, 2)),
+      s3Key,
+      'application/json'
+    );
+
+    return new NextResponse(JSON.stringify(updatedDemo), {
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+  } catch (error) {
+    console.error('Error updating demo:', error);
+    return new NextResponse('Error updating demo', { status: 500 });
   }
 }
 
@@ -56,65 +108,105 @@ export async function DELETE(
   { params }: { params: { id: string } }
 ) {
   try {
-    const { id: demoId } = await Promise.resolve(params);
+    const demoId = params.id;
     
-    if (!demoId) {
-      return new NextResponse('Demo ID is required', { status: 400 });
-    }
-
-    // Check if it's a static demo
-    const staticDemoIds = ['math-assistant', 'writing-assistant', 'language-assistant', 'coding-assistant'];
+    // Don't allow deletion of static demos
     if (staticDemoIds.includes(demoId)) {
       return new NextResponse('Cannot delete static demos', { status: 403 });
     }
 
-    // Use the correct base path
-    const basePath = getBasePath();
-
-    // Get the demo config first to identify all resources to delete
-    const configPath = path.join(basePath, 'public', 'demos', demoId, 'config.json');
-    let assistants: { id: string }[] = [];
-    
+    // For dynamic demos, delete from S3
     try {
-      await fs.access(configPath);
-      const configData = await fs.readFile(configPath, 'utf-8');
-      const config = JSON.parse(configData);
-      assistants = config.assistants || [];
+      // First check if the demo exists
+      const configKey = `demos/${demoId}/config.json`;
+      const command = new GetObjectCommand({
+        Bucket: BUCKET_NAME,
+        Key: configKey
+      });
+
+      try {
+        await s3Client.send(command);
     } catch (error) {
+        const s3Error = error as { name?: string };
+        if (s3Error.name === 'NoSuchKey') {
+          return new NextResponse('Demo not found', { status: 404 });
+        }
+        throw error;
+      }
+
+      // Get the demo config to find all associated files
+      const demoConfigResponse = await s3Client.send(command);
+      if (!demoConfigResponse.Body) {
       return new NextResponse('Demo not found', { status: 404 });
     }
 
-    // Delete all related files in the following order:
-    
-    // 1. Delete markdown files for all assistants
-    const markdownDir = path.join(basePath, 'public', 'markdown');
-    for (const assistant of assistants) {
-      try {
-        const markdownPath = path.join(markdownDir, `${demoId}-${assistant.id}.md`);
-        await fs.unlink(markdownPath).catch(() => {
-          // Ignore errors if file doesn't exist
-          console.log(`Markdown file not found: ${markdownPath}`);
-        });
-      } catch (error) {
-        console.error(`Error deleting markdown for assistant ${assistant.id}:`, error);
-        // Continue with other deletions even if one fails
+      const configText = await demoConfigResponse.Body.transformToString();
+      const config = JSON.parse(configText);
+      
+      // List all files in the demo's directory to delete them
+      // This is a simplified approach - in production you would want to use
+      // S3's listObjectsV2 and deleteObjects for batch operations
+      
+      // Delete config file
+      await s3Client.send(new DeleteObjectCommand({
+        Bucket: BUCKET_NAME,
+        Key: configKey
+      }));
+      console.log(`Deleted S3 config file: ${configKey}`);
+      
+      // Delete demo icon if exists
+      if (config.iconPath) {
+        await s3Client.send(new DeleteObjectCommand({
+          Bucket: BUCKET_NAME,
+          Key: config.iconPath
+        }));
+        console.log(`Deleted S3 demo icon: ${config.iconPath}`);
       }
-    }
-
-    // 2. Delete the entire demo directory with all assets
-    const demoDir = path.join(basePath, 'public', 'demos', demoId);
-    try {
-      await removeSync(demoDir);
+      
+      // Delete all assistant icons and markdown files
+      if (config.assistants && config.assistants.length > 0) {
+        for (const assistant of config.assistants) {
+          // Delete assistant icon if exists
+          if (assistant.iconPath) {
+            await s3Client.send(new DeleteObjectCommand({
+              Bucket: BUCKET_NAME,
+              Key: assistant.iconPath
+            }));
+            console.log(`Deleted S3 assistant icon: ${assistant.iconPath}`);
+          }
+          
+          // Delete assistant markdown if exists
+          const markdownKey = `demos/${demoId}/markdown/${assistant.id}.md`;
+          try {
+            await s3Client.send(new DeleteObjectCommand({
+              Bucket: BUCKET_NAME,
+              Key: markdownKey
+            }));
+            console.log(`Deleted S3 assistant markdown: ${markdownKey}`);
+      } catch (error) {
+            console.warn(`Could not delete markdown for assistant ${assistant.id}, it may not exist`);
+          }
+        }
+      }
+      
+      // Delete all documents if exists
+      if (config.documents && config.documents.length > 0) {
+        for (const doc of config.documents) {
+          if (doc.path) {
+            await s3Client.send(new DeleteObjectCommand({
+              Bucket: BUCKET_NAME,
+              Key: doc.path
+            }));
+            console.log(`Deleted S3 document: ${doc.path}`);
+          }
+        }
+      }
+      
+      return new NextResponse(null, { status: 204 });
     } catch (error) {
-      console.error(`Error deleting demo directory: ${demoDir}`, error);
-      return new NextResponse('Failed to delete demo files', { status: 500 });
+      console.error('Error deleting demo from S3:', error);
+      return new NextResponse('Error deleting demo', { status: 500 });
     }
-
-    return new NextResponse(JSON.stringify({ success: true }), {
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    });
   } catch (error) {
     console.error('Error deleting demo:', error);
     return new NextResponse('Error deleting demo', { status: 500 });

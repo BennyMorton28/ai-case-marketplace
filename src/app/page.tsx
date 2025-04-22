@@ -1,6 +1,6 @@
-import { DemoGrid } from '@/components/dashboard/DemoGrid';
+import { DemoGrid } from '../components/dashboard/DemoGrid';
 import { useDemoStore } from '@/store/demoStore';
-import { Layout } from '@/components/common/Layout';
+import { Layout } from '../components/common/Layout';
 
 export default function Home() {
   const { demos } = useDemoStore();

@@ -1,113 +1,36 @@
 'use client';
 
+import React from 'react';
 import { useState, useEffect } from 'react';
 import { useParams } from 'next/navigation';
 import StreamingChat from '../../components/StreamingChat';
-import { ArrowLeftIcon, LockClosedIcon, LockOpenIcon, DocumentTextIcon } from '@heroicons/react/24/outline';
+import { ArrowLeftIcon, LockClosedIcon, LockOpenIcon, DocumentTextIcon, CogIcon, PencilIcon } from '@heroicons/react/24/outline';
 import Link from 'next/link';
 import DemoIcon from '../../components/DemoIcon';
 import PasswordInput from '../../components/PasswordInput';
 import DocumentViewer from '../../components/DocumentViewer';
+import AdminPanel from '../../components/AdminPanel';
+import AuthButton from '../../components/AuthButton';
+import { useAuth } from '../../contexts/AuthContext';
+import type { Demo, Assistant, Document } from '../../../src/types';
 
-interface Assistant {
-  id: string;
+type CaseConfig = Demo;
+
+interface ViewerDocument {
   name: string;
   description: string;
-  icon?: string;
-  hasPassword: boolean;
-  password?: string;
+  key: string;
+  type: string;
+  size: number;
 }
 
-interface CaseConfig {
-  id: string;
-  title: string;
-  author: string;
-  icon?: string;
-  hasPassword?: boolean;
-  password?: string;
-  assistants: Assistant[];
-  documents?: {
-    name: string;
-    description: string;
-    key: string;
-    type: string;
-    size: number;
-  }[];
-}
-
-// Static case configurations
-const staticCases: Record<string, CaseConfig> = {
-  'math-assistant': {
-    id: 'math-assistant',
-    title: 'Math Assistant',
-    author: 'Benny',
-    icon: 'math',
-    assistants: [
-      {
-        id: 'math-assistant',
-        name: 'Math Assistant',
-        description: 'Helps with mathematical problems and concepts',
-        hasPassword: false
-      }
-    ]
-  },
-  'writing-assistant': {
-    id: 'writing-assistant',
-    title: 'Writing Assistant',
-    author: 'Benny',
-    icon: 'writing',
-    assistants: [
-      {
-        id: 'writing-assistant',
-        name: 'Writing Assistant',
-        description: 'Helps with writing and content creation',
-        hasPassword: false
-      }
-    ]
-  },
-  'language-assistant': {
-    id: 'language-assistant',
-    title: 'Language Assistant',
-    author: 'Benny',
-    icon: 'language',
-    assistants: [
-      {
-        id: 'language-assistant',
-        name: 'Language Assistant',
-        description: 'Helps with language learning and translation',
-        hasPassword: false
-      },
-      {
-        id: 'language-assistant-advanced',
-        name: 'Advanced Language Assistant',
-        description: 'Advanced language analysis and translation',
-        hasPassword: true,
-        password: 'lang123'
-      }
-    ]
-  },
-  'coding-assistant': {
-    id: 'coding-assistant',
-    title: 'Coding Assistant',
-    author: 'Benny',
-    icon: 'coding',
-    assistants: [
-      {
-        id: 'code-reviewer',
-        name: 'Code Reviewer',
-        description: 'Reviews code and suggests improvements',
-        hasPassword: false
-      },
-      {
-        id: 'debug-helper',
-        name: 'Debug Helper',
-        description: 'Helps with debugging code issues',
-        hasPassword: true,
-        password: 'code123'
-      }
-    ]
-  }
-};
+const convertToViewerDocument = (doc: Document): ViewerDocument => ({
+  name: doc.name,
+  description: doc.name, // Use name as description if none provided
+  key: doc.path,
+  type: doc.path.split('.').pop()?.toLowerCase() === 'pdf' ? 'application/pdf' : 'application/octet-stream',
+  size: 0 // Size will be determined when fetching
+});
 
 export default function CaseInterface() {
   const params = useParams<{ id: string }>();
@@ -121,6 +44,16 @@ export default function CaseInterface() {
   const [casePassword, setCasePassword] = useState<string>('');
   const [isCaseUnlocked, setIsCaseUnlocked] = useState<boolean>(false);
   const [isDocumentViewerOpen, setIsDocumentViewerOpen] = useState(false);
+  const [isAdminPanelOpen, setIsAdminPanelOpen] = useState(false);
+  const { isAdmin, login, logout } = useAuth();
+
+  const handleAuthChange = (isAuthenticated: boolean) => {
+    if (isAuthenticated) {
+      login();
+    } else {
+      logout();
+    }
+  };
 
   // Function to check password for assistants
   const checkPassword = (assistantId: string, password: string): boolean => {
@@ -157,48 +90,29 @@ export default function CaseInterface() {
         setLoading(true);
         setError(null);
         
-        let config: CaseConfig | null = null;
-        
-        // First try to fetch from the API
         console.log(`Fetching case config from API: ${caseId}`);
         const response = await fetch(`/api/demos/${caseId}`);
         
         if (response.ok) {
-          config = await response.json();
-          console.log(`Successfully fetched case config from API: ${caseId}`);
+          const config = await response.json();
+          console.log(`Successfully fetched case config from API: ${caseId}`, config);
+          console.log('Assistant data:', config.assistants);
           setCaseConfig(config);
         } else {
-          // If not found in API, check static configs
-          console.log(`Checking static configs for case: ${caseId}`);
-          if (staticCases[caseId]) {
-            config = staticCases[caseId];
-            setCaseConfig(config);
-          } else {
-            console.error(`Case not found in API or static configs: ${caseId}`);
-            setError('Case not found');
-          }
+          console.error(`Case not found: ${caseId}`);
+          setError('Case not found');
         }
-
-        // If we have a config, select an assistant
-        if (config) {
-          // Auto-select the first non-password-protected assistant
-          const firstAvailableAssistant = config.assistants.find(assistant => !assistant.hasPassword);
-          if (firstAvailableAssistant) {
-            setSelectedAssistant(firstAvailableAssistant);
-          } else if (config.assistants.length > 0) {
-            // If all assistants require passwords, select the first one anyway
-            setSelectedAssistant(config.assistants[0]);
-          }
-        }
-      } catch (error) {
-        console.error('Error fetching case:', error);
-        setError('An error occurred while loading the case');
+      } catch (err) {
+        console.error('Error fetching case config:', err);
+        setError('Failed to load case configuration');
       } finally {
         setLoading(false);
       }
     };
-    
-    fetchCaseConfig();
+
+    if (caseId) {
+      fetchCaseConfig();
+    }
   }, [caseId]);
 
   const handleAssistantClick = (assistant: Assistant) => {
@@ -294,25 +208,58 @@ export default function CaseInterface() {
 
   const assistants = caseConfig.assistants;
 
+  const onUpdateDemo = async (updatedDemo: CaseConfig) => {
+    try {
+      if (caseId) {
+        // For dynamic demos, make API request
+        const response = await fetch(`/api/demos/${caseId}`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(updatedDemo),
+        });
+
+        if (!response.ok) {
+          throw new Error('Failed to update demo');
+        }
+
+        const updatedCase: CaseConfig = {
+          ...updatedDemo,
+          documents: updatedDemo.documents || [] // Ensure documents is not undefined
+        };
+        setCaseConfig(updatedCase);
+
+        // Update selected assistant if it was modified
+        if (selectedAssistant) {
+          const updatedAssistant = updatedCase.assistants.find(a => a.id === selectedAssistant.id);
+          if (updatedAssistant && JSON.stringify(updatedAssistant) !== JSON.stringify(selectedAssistant)) {
+            setSelectedAssistant(updatedAssistant);
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Error updating demo:', error);
+      // Handle error appropriately
+    }
+  };
+
+  // Get the icon URL for the assistant
+  const assistantIcon = selectedAssistant?.iconUrl || selectedAssistant?.iconPath;
+
   return (
-    <div className="flex flex-col min-h-screen bg-gray-50 dark:bg-gray-900">
-      {/* Top Bar */}
-      <header className="bg-white dark:bg-gray-800 shadow-sm sticky top-0 z-20">
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+      {/* Header */}
+      <header className="bg-white dark:bg-gray-800 shadow">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex justify-between items-center">
-            <div className="flex items-center">
-              <Link href="/" className="mr-4">
-                <ArrowLeftIcon className="h-5 w-5 text-gray-500 dark:text-gray-400" />
+            <div className="flex items-center space-x-4">
+              <Link href="/" className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300">
+                <ArrowLeftIcon className="h-5 w-5" />
               </Link>
-              <div className="flex-shrink-0">
-                {caseConfig?.icon ? (
-                  <DemoIcon icon={caseConfig.icon} name={caseConfig.title} size={32} />
-                ) : (
-                  <div className="h-8 w-8 bg-blue-500 rounded-full"></div>
-                )}
-              </div>
-              <div className="ml-4">
-                <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
+              <div className="flex items-center space-x-3">
+                <DemoIcon icon={caseConfig.iconPath} name={caseConfig.title} size={32} />
+                <h1 className="text-xl font-semibold text-gray-900 dark:text-white">
                   {caseConfig.title}
                 </h1>
               </div>
@@ -324,25 +271,42 @@ export default function CaseInterface() {
                   className="inline-flex items-center px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
                 >
                   <DocumentTextIcon className="h-5 w-5 mr-2" />
-                  Case Documents
+                  Documents
                 </button>
               )}
-              <span className="text-sm text-gray-500 dark:text-gray-400">By {caseConfig.author}</span>
+              <AuthButton onAuthChange={handleAuthChange} />
+              {isAdmin && (
+                <button
+                  onClick={() => setIsAdminPanelOpen(true)}
+                  className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                >
+                  <PencilIcon className="h-5 w-5 mr-2" />
+                  Edit Demo
+                </button>
+              )}
             </div>
           </div>
         </div>
       </header>
 
-      {/* Main Content */}
-      <div className="flex-1 flex flex-col">
+      {/* Main content */}
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Assistant Selection Header */}
         <div className="flex-none bg-white dark:bg-gray-800 p-4 border-b border-gray-200 dark:border-gray-700 sticky top-[72px] z-10">
-          <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">Assistants</h2>
+          <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">Characters</h2>
           <div className="flex flex-wrap gap-3">
             {assistants.map((assistant) => {
               const isUnlocked = unlockedAssistants.has(assistant.id);
               const isSelected = selectedAssistant?.id === assistant.id;
               const isLocked = assistant.hasPassword && !isUnlocked;
+              const assistantIcon = assistant.iconUrl || assistant.iconPath;
+              
+              console.log(`Rendering assistant: ${assistant.name}`, {
+                id: assistant.id,
+                iconPath: assistantIcon,
+                isLocked,
+                isSelected
+              });
 
               return (
                 <div
@@ -357,8 +321,8 @@ export default function CaseInterface() {
                   onClick={() => !isLocked && handleAssistantClick(assistant)}
                 >
                   <div className="flex items-center">
-                    {assistant.icon ? (
-                      <DemoIcon key={`icon-${assistant.id}`} icon={assistant.icon} name={assistant.name} size={24} />
+                    {assistantIcon ? (
+                      <DemoIcon key={`icon-${assistant.id}`} icon={assistantIcon} name={assistant.name} size={24} />
                     ) : (
                       <div key={`default-icon-${assistant.id}`} className="w-6 h-6 bg-gray-200 dark:bg-gray-700 rounded-full mr-2" />
                     )}
@@ -389,11 +353,11 @@ export default function CaseInterface() {
         {/* Chat Content - Full Width */}
         <div className="flex-1 w-full">
           {selectedAssistant ? (
-            <StreamingChat 
-              assistantId={selectedAssistant.id} 
+            <StreamingChat
+              assistantId={selectedAssistant.id}
               assistantName={selectedAssistant.name}
-              caseId={caseConfig.id}
-              assistantIcon={selectedAssistant.icon}
+              caseId={params.id}
+              assistantIcon={assistantIcon}
             />
           ) : (
             <div className="flex-1 bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 m-4 text-center">
@@ -403,7 +367,7 @@ export default function CaseInterface() {
             </div>
           )}
         </div>
-      </div>
+      </main>
 
       {/* Bottom Bar */}
       <footer className="fixed bottom-0 left-0 right-0 bg-white dark:bg-gray-800 shadow-sm z-50">
@@ -427,9 +391,19 @@ export default function CaseInterface() {
       {/* Document Viewer */}
       {caseConfig.documents && (
         <DocumentViewer
-          documents={caseConfig.documents}
+          documents={caseConfig.documents?.map(convertToViewerDocument) || []}
           isOpen={isDocumentViewerOpen}
           onClose={() => setIsDocumentViewerOpen(false)}
+        />
+      )}
+
+      {/* Admin Panel */}
+      {isAdmin && (
+        <AdminPanel
+          isOpen={isAdminPanelOpen}
+          onClose={() => setIsAdminPanelOpen(false)}
+          currentDemo={caseConfig}
+          onUpdateDemo={onUpdateDemo}
         />
       )}
     </div>
