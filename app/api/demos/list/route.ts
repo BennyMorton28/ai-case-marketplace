@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { s3Client, BUCKET_NAME, getSignedDownloadUrl } from '../../../lib/s3';
-import { ListObjectsV2Command, GetObjectCommand } from '@aws-sdk/client-s3';
+import { ListObjectsV2Command, GetObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3';
 
 // List of static demo IDs to exclude
 const STATIC_DEMOS = ['math-assistant', 'writing-assistant', 'language-assistant', 'coding-assistant'];
@@ -32,34 +32,61 @@ export async function GET() {
       if (STATIC_DEMOS.includes(demoId)) continue;
 
       try {
+        // Check if the demo directory exists
+        const headCommand = new HeadObjectCommand({
+          Bucket: BUCKET_NAME,
+          Key: prefix.Prefix
+        });
+
+        try {
+          await s3Client.send(headCommand);
+        } catch (error) {
+          // Skip if directory doesn't exist
+          continue;
+        }
+
         // Get the config.json for this demo
         const configCommand = new GetObjectCommand({
           Bucket: BUCKET_NAME,
           Key: `${prefix.Prefix}config.json`
         });
 
-        const configResponse = await s3Client.send(configCommand);
-        if (!configResponse.Body) continue;
+        try {
+          const configResponse = await s3Client.send(configCommand);
+          if (!configResponse.Body) continue;
 
-        // Parse the config file
-        const configText = await configResponse.Body.transformToString();
-        const config = JSON.parse(configText);
+          // Parse the config file
+          const configText = await configResponse.Body.transformToString();
+          const config = JSON.parse(configText);
 
-        // Get signed URLs for icons if they exist
-        if (config.iconPath) {
-          config.iconUrl = await getSignedDownloadUrl(config.iconPath);
-        }
-
-        // Get signed URLs for assistant icons
-        if (config.assistants) {
-          for (const assistant of config.assistants) {
-            if (assistant.iconPath) {
-              assistant.iconUrl = await getSignedDownloadUrl(assistant.iconPath);
+          // Get signed URLs for icons if they exist
+          if (config.iconPath) {
+            try {
+              config.iconUrl = await getSignedDownloadUrl(config.iconPath);
+            } catch (error) {
+              console.warn(`Could not get signed URL for icon ${config.iconPath}:`, error);
             }
           }
-        }
 
-        demos.push(config);
+          // Get signed URLs for assistant icons
+          if (config.assistants) {
+            for (const assistant of config.assistants) {
+              if (assistant.iconPath) {
+                try {
+                  assistant.iconUrl = await getSignedDownloadUrl(assistant.iconPath);
+                } catch (error) {
+                  console.warn(`Could not get signed URL for assistant icon ${assistant.iconPath}:`, error);
+                }
+              }
+            }
+          }
+
+          demos.push(config);
+        } catch (error) {
+          // Skip if config file doesn't exist
+          console.warn(`No config file found for demo ${demoId}`);
+          continue;
+        }
       } catch (error) {
         console.error(`Error processing demo ${demoId}:`, error);
         // Continue with other demos even if one fails
