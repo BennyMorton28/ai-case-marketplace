@@ -137,18 +137,6 @@ export default function AssistantEditForm({ isOpen, onClose, onSave, onDelete, a
           throw new Error('Could not determine demo ID');
         }
 
-        // Only save prompt content if it was actually changed
-        if (formData.promptContent && formData.promptContent !== assistant?.promptContent) {
-          const response = await fetch(`/api/demos/${demoId}/assistants/${formData.id}/markdown`, {
-            method: 'PUT',
-            body: formData.promptContent
-          });
-
-          if (!response.ok) {
-            throw new Error('Failed to save prompt content');
-          }
-        }
-
         // Only upload icon if a new one was selected
         if (formData.iconFile) {
           const iconFormData = new FormData();
@@ -170,11 +158,13 @@ export default function AssistantEditForm({ isOpen, onClose, onSave, onDelete, a
           formData.iconPath = assistant?.iconPath;
         }
 
-        // Then save the assistant data, preserving any existing paths
+        // Then save the assistant data, including the promptContent
         const dataToSave = {
           ...formData,
           iconPath: formData.iconPath || assistant?.iconPath,
-          promptMarkdownPath: assistant?.promptMarkdownPath
+          promptMarkdownPath: assistant?.promptMarkdownPath,
+          // Make sure to include the promptContent
+          promptContent: formData.promptContent || ''
         };
 
         onSave(dataToSave);

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { s3Client, BUCKET_NAME } from '../../../../../lib/s3';
+import { s3Client, BUCKET_NAME, uploadToS3 } from '../../../../../lib/s3';
 import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
 
 // List of static demo IDs that should be protected
@@ -36,17 +36,35 @@ export async function PUT(
     const assistantIndex = config.assistants.findIndex((a: any) => a.id === assistantId);
     if (assistantIndex === -1) {
       return NextResponse.json({ error: 'Assistant not found' }, { status: 404 });
-      }
+    }
+    
+    // Save the markdown content to S3 if it exists
+    if (updatedAssistant.promptContent) {
+      const markdownPath = `demos/${demoId}/markdown/${assistantId}.md`;
+      await uploadToS3(
+        Buffer.from(updatedAssistant.promptContent),
+        markdownPath,
+        'text/markdown'
+      );
+      
+      // Update the promptMarkdownPath in the assistant data
+      updatedAssistant.promptMarkdownPath = markdownPath;
+      
+      // Remove the promptContent from the assistant data before saving to config
+      // as we don't want to store the full content in the config
+      delete updatedAssistant.promptContent;
+    }
+    
     config.assistants[assistantIndex] = updatedAssistant;
 
     // Save updated config back to S3
-      const putConfigCommand = new PutObjectCommand({
-        Bucket: BUCKET_NAME,
+    const putConfigCommand = new PutObjectCommand({
+      Bucket: BUCKET_NAME,
       Key: `demos/${demoId}/config.json`,
-        Body: JSON.stringify(config, null, 2),
-        ContentType: 'application/json'
-      });
-      await s3Client.send(putConfigCommand);
+      Body: JSON.stringify(config, null, 2),
+      ContentType: 'application/json'
+    });
+    await s3Client.send(putConfigCommand);
 
     return NextResponse.json({ success: true });
   } catch (error) {

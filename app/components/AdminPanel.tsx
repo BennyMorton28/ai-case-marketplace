@@ -101,7 +101,9 @@ export function AdminPanel({ isOpen, onClose, currentDemo, onUpdateDemo }: Admin
       const assistantToUpdate = {
         ...updatedAssistant,
         iconPath: updatedAssistant.iconPath || existingAssistant?.iconPath,
-        promptMarkdownPath: existingAssistant?.promptMarkdownPath || `demos/${editedDemo.id}/markdown/${updatedAssistant.id}.md`
+        promptMarkdownPath: existingAssistant?.promptMarkdownPath || `demos/${editedDemo.id}/markdown/${updatedAssistant.id}.md`,
+        // Include the promptContent from the form
+        promptContent: updatedAssistant.promptContent || ''
       };
 
       // First update the assistant in S3
@@ -118,16 +120,16 @@ export function AdminPanel({ isOpen, onClose, currentDemo, onUpdateDemo }: Admin
       }
 
       // Update local state
-    setEditedDemo(prev => ({
-      ...prev,
-      assistants: prev.assistants.map(a => 
+      setEditedDemo(prev => ({
+        ...prev,
+        assistants: prev.assistants.map(a => 
           a.id === updatedAssistant.id ? assistantToUpdate : a
-      )
-    }));
+        )
+      }));
 
       // Close the assistant edit modal
-    setIsAssistantEditOpen(false);
-    setSelectedAssistant(null);
+      setIsAssistantEditOpen(false);
+      setSelectedAssistant(null);
     
       // Fetch the latest demo data to ensure we have the most up-to-date version
       const demoResponse = await fetch(`/api/demos/${currentDemo.id}`);
@@ -140,7 +142,7 @@ export function AdminPanel({ isOpen, onClose, currentDemo, onUpdateDemo }: Admin
       onUpdateDemo(updatedDemo);
 
       // Force a page refresh to ensure all components reflect the new data
-    window.location.reload();
+      window.location.reload();
     } catch (error) {
       console.error('Error saving assistant:', error);
       alert('Failed to save assistant. Please try again.');

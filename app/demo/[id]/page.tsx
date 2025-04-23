@@ -3,27 +3,16 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import StreamingChat from '../../components/StreamingChat';
-import { ArrowLeftIcon, LockClosedIcon, LockOpenIcon, DocumentTextIcon, CogIcon, PencilIcon, UserPlusIcon } from '@heroicons/react/24/outline';
+import { ArrowLeftIcon, LockClosedIcon, LockOpenIcon, CogIcon, PencilIcon, UserPlusIcon } from '@heroicons/react/24/outline';
 import Link from 'next/link';
 import DemoIcon from '../../components/DemoIcon';
 import PasswordInput from '../../components/PasswordInput';
-import DocumentViewer from '../../components/DocumentViewer';
 import AdminPanel from '../../components/AdminPanel';
 import ManageStudentsModal from '../../components/ManageStudentsModal';
 import { useAuth } from '../../contexts/AuthContext';
-import type { Demo } from '../../types/demo';
-import type { Document as CaseDocument } from '../../types/document';
-import type { Assistant } from '../../types/assistant';
+import type { Assistant } from '../../../src/types';
 import { useSession } from 'next-auth/react';
 import { toast } from 'react-hot-toast';
-
-interface ViewerDocument {
-  name: string;
-  description: string;
-  key: string;
-  type: string;
-  size: number;
-}
 
 interface CaseConfig {
   id: string;
@@ -34,7 +23,7 @@ interface CaseConfig {
   password?: string;
   explanationMarkdownPath: string;
   assistants: Assistant[];
-  documents: CaseDocument[];
+  documents?: any[];
   hasPassword: boolean;
   createdAt: string;
   updatedAt: string;
@@ -47,21 +36,12 @@ interface Demo {
   password?: string;
   iconPath?: string;
   assistants?: Assistant[];
-  documents?: CaseDocument[];
   creator?: {
     email: string;
   };
   createdAt?: string;
   updatedAt?: string;
 }
-
-const convertToViewerDocument = (doc: CaseDocument): ViewerDocument => ({
-  name: doc.title,
-  description: doc.title,
-  key: doc.path,
-  type: doc.type,
-  size: 0
-});
 
 export default function DemoPage({ params }: { params: { id: string } }) {
   const { data: session } = useSession();
@@ -74,12 +54,9 @@ export default function DemoPage({ params }: { params: { id: string } }) {
   const [isPasswordCorrect, setIsPasswordCorrect] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [documents, setDocuments] = useState<CaseDocument[]>([]);
   const [assistants, setAssistants] = useState<Assistant[]>([]);
-  const [selectedDocument, setSelectedDocument] = useState<CaseDocument | null>(null);
-  const [isDocumentViewerOpen, setIsDocumentViewerOpen] = useState(false);
+  const [selectedAssistant, setSelectedAssistant] = useState<Assistant | null>(null);
   const [showAdminPanel, setShowAdminPanel] = useState(false);
-  const [showDocuments, setShowDocuments] = useState(false);
   
   const { user, isAdmin } = useAuth();
   
@@ -113,7 +90,7 @@ export default function DemoPage({ params }: { params: { id: string } }) {
   // Function to check password for assistants
   const checkPassword = (assistantId: string, password: string): boolean => {
     if (!caseConfig) return false;
-    const assistant = caseConfig.assistants.find(a => a.id === assistantId);
+    const assistant = caseConfig.assistants?.find(a => a.id === assistantId);
     return assistant?.password === password;
   };
 
@@ -154,18 +131,11 @@ export default function DemoPage({ params }: { params: { id: string } }) {
           console.log('Assistant data:', config.assistants);
           setCaseConfig(config);
           setAssistants(config.assistants);
-          setDocuments(config.documents || []);
           
           // Automatically select the first unlocked assistant
-          const firstUnlockedAssistant = config.assistants?.find(a => !a.isLocked);
+          const firstUnlockedAssistant = config.assistants?.find((a: Assistant) => !a.hasPassword);
           if (firstUnlockedAssistant) {
-            const doc: CaseDocument = {
-              path: firstUnlockedAssistant.name,
-              title: firstUnlockedAssistant.name,
-              type: 'assistant',
-              content: firstUnlockedAssistant.systemPrompt
-            };
-            setSelectedDocument(doc);
+            setSelectedAssistant(firstUnlockedAssistant);
           }
         } else {
           console.error(`Case not found: ${params.id}`);
@@ -185,23 +155,12 @@ export default function DemoPage({ params }: { params: { id: string } }) {
   }, [params.id]);
 
   const handleAssistantClick = (assistant: Assistant) => {
-    if (!assistant.isLocked) {
-      const doc: CaseDocument = {
-        path: assistant.name,
-        title: assistant.name,
-        type: 'assistant',
-        content: assistant.systemPrompt
-      };
-      setSelectedDocument(doc);
-      setIsDocumentViewerOpen(true);
+    if (!assistant.hasPassword) {
+      setSelectedAssistant(assistant);
     } else {
-      setSelectedDocument(null);
+      setSelectedAssistant(null);
       setIsPasswordModalOpen(true);
     }
-  };
-
-  const handleDocumentClick = (document: CaseDocument) => {
-    setSelectedDocument(document);
   };
 
   const onUpdateDemo = async (updatedDemo: Demo) => {
@@ -309,15 +268,6 @@ export default function DemoPage({ params }: { params: { id: string } }) {
               </div>
             </div>
             <div className="flex items-center space-x-4">
-              {caseConfig.documents && caseConfig.documents.length > 0 && (
-                <button
-                  onClick={() => setShowDocuments(true)}
-                  className="inline-flex items-center px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-                >
-                  <DocumentTextIcon className="h-5 w-5 mr-2" />
-                  Documents
-                </button>
-              )}
               {isAdmin && (
                 <>
                   <button
@@ -342,14 +292,14 @@ export default function DemoPage({ params }: { params: { id: string } }) {
       </header>
 
       {/* Main content */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Assistant Selection Header */}
-        <div className="flex-none bg-white dark:bg-gray-800 p-4 border-b border-gray-200 dark:border-gray-700 sticky top-[72px] z-10">
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 relative flex flex-col h-[calc(100vh-6rem)]">
+        {/* Assistant Selection Header - Fixed */}
+        <div className="absolute top-8 left-4 right-4 sm:left-6 sm:right-6 lg:left-8 lg:right-8 bg-white dark:bg-gray-800 rounded-t-lg shadow-md p-4 border-b border-gray-200 dark:border-gray-700 z-20">
           <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">Characters</h2>
           <div className="flex flex-wrap gap-3">
             {caseConfig?.assistants?.map((assistant) => {
-              const isLocked = assistant.isLocked;
-              const isSelected = selectedDocument?.path === assistant.name;
+              const isLocked = assistant.hasPassword;
+              const isSelected = selectedAssistant?.id === assistant.id;
               
               return (
                 <div
@@ -381,12 +331,12 @@ export default function DemoPage({ params }: { params: { id: string } }) {
           </div>
         </div>
 
-        {/* Chat Content - Full Width */}
-        <div className="flex-1 w-full">
-          {selectedDocument ? (
+        {/* Chat Content - Scrollable */}
+        <div className="flex-1 mt-[160px] mb-[80px] overflow-y-auto">
+          {selectedAssistant ? (
             <StreamingChat
-              assistantId={selectedDocument.path}
-              assistantName={selectedDocument.title}
+              assistantId={selectedAssistant.id}
+              assistantName={selectedAssistant.name}
               caseId={params.id}
               assistantIcon={caseConfig.iconPath}
             />
@@ -401,7 +351,7 @@ export default function DemoPage({ params }: { params: { id: string } }) {
       </main>
 
       {/* Bottom Bar */}
-      <footer className="fixed bottom-0 left-0 right-0 bg-white dark:bg-gray-800 shadow-sm z-50">
+      <footer className="fixed bottom-0 left-0 right-0 bg-white dark:bg-gray-800 shadow-sm z-10">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex justify-between items-center">
             <p className="text-sm text-gray-500 dark:text-gray-400">
@@ -419,15 +369,6 @@ export default function DemoPage({ params }: { params: { id: string } }) {
         </div>
       </footer>
 
-      {/* Document Viewer */}
-      {showDocuments && caseConfig?.documents && (
-        <DocumentViewer 
-          documents={caseConfig.documents.map(convertToViewerDocument)}
-          isOpen={showDocuments}
-          onClose={() => setShowDocuments(false)}
-        />
-      )}
-
       {/* Admin Panel */}
       {isAdmin && (
         <AdminPanel
@@ -442,7 +383,7 @@ export default function DemoPage({ params }: { params: { id: string } }) {
             password: caseConfig?.password,
             explanationMarkdownPath: '',
             assistants: caseConfig?.assistants || [],
-            documents: caseConfig?.documents || [],
+            documents: [],
             hasPassword: !!caseConfig?.password,
             createdAt: caseConfig?.createdAt || '',
             updatedAt: caseConfig?.updatedAt || ''
@@ -455,7 +396,6 @@ export default function DemoPage({ params }: { params: { id: string } }) {
               password: updatedDemo.hasPassword ? updatedDemo.password : undefined,
               iconPath: updatedDemo.iconPath,
               assistants: updatedDemo.assistants,
-              documents: updatedDemo.documents,
               createdAt: updatedDemo.createdAt,
               updatedAt: updatedDemo.updatedAt
             };

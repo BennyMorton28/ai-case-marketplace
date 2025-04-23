@@ -117,12 +117,21 @@ export default function StreamingChat({ assistantId, assistantName, caseId, assi
   }, [isLoading]);
 
   const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
   };
 
+  // Update scroll behavior to be more aggressive during streaming
   useEffect(() => {
-    scrollToBottom();
-  }, [messages]);
+    if (isLoading) {
+      // Use immediate scroll during loading/streaming
+      messagesEndRef.current?.scrollIntoView({ behavior: 'auto' });
+    } else {
+      // Use smooth scroll when not loading
+      scrollToBottom();
+    }
+  }, [messages, isLoading]);
 
   // Function to handle clearing the chat
   const handleClearChat = () => {
@@ -571,165 +580,150 @@ export default function StreamingChat({ assistantId, assistantName, caseId, assi
   };
 
   return (
-    <div className="flex-1 flex flex-col relative h-full">
-      {/* Assistant Name Header - Fixed at top of chat */}
-      <div className="flex-none bg-white dark:bg-gray-800 p-4 border-b border-gray-200 dark:border-gray-700">
-        <div className="flex justify-between items-center">
-          <div className="flex items-center">
-            {assistantIcon && (
-              <div className="mr-3">
-                <DemoIcon icon={assistantIcon} name={assistantName} size={32} />
-              </div>
-            )}
-            <div>
-              <h2 className="text-lg font-medium text-gray-900 dark:text-white">{assistantName}</h2>
-              <p className="text-sm text-gray-500 dark:text-gray-400">Your AI character</p>
-            </div>
-          </div>
-          <div className="flex space-x-2">
-            <div className="relative" ref={exportOptionsRef}>
-              <button
-                onClick={() => setShowExportOptions(!showExportOptions)}
-                className="flex items-center px-3 py-1 text-sm bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-md hover:bg-gray-300 dark:hover:bg-gray-600"
-                disabled={messages.length === 0}
-              >
-                <ArrowDownTrayIcon className="w-4 h-4 mr-1" />
-                Export
-              </button>
-              
-              {showExportOptions && (
-                <div className="absolute right-0 mt-1 w-36 bg-white dark:bg-gray-800 rounded-md shadow-lg z-10 border border-gray-200 dark:border-gray-700">
-                  <div className="py-1">
-                    <button
-                      onClick={exportAsPNG}
-                      className="block w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700"
-                    >
-                      Export as PNG
-                    </button>
-                    <button
-                      onClick={exportAsPDF}
-                      className="block w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700"
-                    >
-                      Export as PDF
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-            
-            <button
-              onClick={handleClearChat}
-              className="flex items-center px-3 py-1 text-sm bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-md hover:bg-gray-300 dark:hover:bg-gray-600"
-              disabled={messages.length === 0}
-            >
-              <TrashIcon className="w-4 h-4 mr-1" />
-              Clear Chat
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* Chat Messages - Scrollable area */}
+    <div className="relative flex flex-col h-full bg-white dark:bg-gray-800 rounded-lg shadow-md">
+      {/* Chat messages container */}
       <div 
         ref={chatContainerRef}
-        className="flex-1 overflow-y-auto px-4 py-4 space-y-4 bg-gray-50 dark:bg-gray-900"
-        style={{ paddingBottom: '120px' }}
+        className="h-full flex flex-col overflow-y-auto p-4 pb-[100px]"
       >
-        {/* Clear Chat Confirmation Modal */}
-        {showClearConfirmation && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-sm w-full mx-4 shadow-xl">
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-                Clear Chat History?
-              </h3>
-              <p className="text-gray-600 dark:text-gray-300 mb-6">
-                Are you sure you want to clear the chat? This action cannot be undone.
-              </p>
-              <div className="flex justify-end space-x-3">
-                <button
-                  onClick={cancelClearChat}
-                  className="px-4 py-2 text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 rounded-md hover:bg-gray-200 dark:hover:bg-gray-600"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={confirmClearChat}
-                  className="px-4 py-2 text-white bg-red-500 rounded-md hover:bg-red-600"
-                >
-                  Clear Chat
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {messages.map((message, index) => (
-          <div
-            key={index}
-            className={`flex ${message.type === 'user' ? 'justify-end' : 'justify-start'}`}
-          >
+        <div className="flex-1" />
+        <div className="space-y-4">
+          {messages.map((message, index) => (
             <div
-              className={`${
-                message.type === 'user'
-                  ? 'bg-blue-500 text-white'
-                  : 'bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700'
-              } rounded-lg px-4 py-2 max-w-[80%] shadow-sm`}
+              key={index}
+              className={`flex ${message.type === 'user' ? 'justify-end' : 'justify-start'}`}
             >
-              {message.type === 'assistant' ? (
-                <div className="prose dark:prose-invert max-w-none">
+              <div
+                className={`flex items-start space-x-2 max-w-[80%] ${
+                  message.type === 'user'
+                    ? 'flex-row-reverse space-x-reverse'
+                    : 'flex-row'
+                }`}
+              >
+                {message.type === 'assistant' && (
+                  <div className="flex-shrink-0 mt-1">
+                    <DemoIcon icon={assistantIcon} name={assistantName} size={32} />
+                  </div>
+                )}
+                <div
+                  className={`rounded-lg p-3 ${
+                    message.type === 'user'
+                      ? 'bg-blue-500 text-white'
+                      : 'bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white'
+                  }`}
+                >
                   <ReactMarkdown
                     remarkPlugins={[remarkGfm, remarkMath]}
                     rehypePlugins={[rehypeKatex, rehypeRaw, rehypeSanitize, rehypeHighlight]}
+                    className="prose dark:prose-invert max-w-none"
                   >
                     {message.content}
                   </ReactMarkdown>
                 </div>
-              ) : (
-                <p>{message.content}</p>
-              )}
+              </div>
             </div>
-          </div>
-        ))}
-        <div ref={messagesEndRef} />
+          ))}
+          <div ref={messagesEndRef} />
+        </div>
       </div>
 
-      {/* Message Input - Fixed at bottom */}
-      <div className="fixed left-0 right-0 bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 p-4" style={{ bottom: '60px', zIndex: 10 }}>
-        <div className="max-w-7xl mx-auto">
-          <form onSubmit={handleSubmit} className="flex gap-2 w-full">
-            <input
-              ref={inputRef}
-              type="text"
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              className="flex-1 p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-              placeholder="Type your message..."
-              disabled={isLoading}
-            />
-            <button
-              type="submit"
-              disabled={isLoading || !input.trim()}
-              className="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {isLoading ? 'Sending...' : 'Send'}
-            </button>
-            {isLoading && (
+      {/* Input form - Fixed at bottom */}
+      <div className="fixed bottom-[60px] left-0 right-0 z-20">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <form 
+            onSubmit={handleSubmit}
+            className="border border-gray-200 dark:border-gray-700 p-4 bg-white dark:bg-gray-800 rounded-lg shadow-md"
+          >
+            <div className="flex items-center space-x-4">
+              <input
+                ref={inputRef}
+                type="text"
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                placeholder="Type your message..."
+                className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
+                disabled={isLoading}
+              />
+              <div className="flex items-center space-x-2">
+                <button
+                  type="button"
+                  onClick={() => setShowExportOptions(true)}
+                  className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300"
+                  title="Export chat"
+                >
+                  <ArrowDownTrayIcon className="h-5 w-5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={handleClearChat}
+                  className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300"
+                  title="Clear chat"
+                >
+                  <TrashIcon className="h-5 w-5" />
+                </button>
+                <button
+                  type="submit"
+                  disabled={isLoading || !input.trim()}
+                  className={`px-4 py-2 rounded-lg ${
+                    isLoading || !input.trim()
+                      ? 'bg-gray-300 dark:bg-gray-700 cursor-not-allowed'
+                      : 'bg-blue-500 hover:bg-blue-600 text-white'
+                  }`}
+                >
+                  {isLoading ? 'Thinking...' : 'Send'}
+                </button>
+              </div>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      {/* Export options dropdown */}
+      {showExportOptions && (
+        <div 
+          ref={exportOptionsRef}
+          className="absolute bottom-[120px] right-8 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 p-2 z-30"
+        >
+          <button
+            onClick={exportAsPDF}
+            className="block w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
+          >
+            Export as PDF
+          </button>
+          <button
+            onClick={exportAsPNG}
+            className="block w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
+          >
+            Export as PNG
+          </button>
+        </div>
+      )}
+
+      {/* Clear chat confirmation modal */}
+      {showClearConfirmation && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-sm w-full mx-4">
+            <h3 className="text-lg font-semibold mb-4">Clear Chat History?</h3>
+            <p className="text-gray-600 dark:text-gray-400 mb-6">
+              This will permanently delete all messages. Are you sure?
+            </p>
+            <div className="flex justify-end space-x-4">
               <button
-                type="button"
-                onClick={handleCancel}
-                className="px-4 py-2 bg-red-500 text-white rounded-md hover:bg-red-600"
+                onClick={cancelClearChat}
+                className="px-4 py-2 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200"
               >
                 Cancel
               </button>
-            )}
-          </form>
-          {error && (
-            <div className="mt-2 p-2 bg-red-100 text-red-700 rounded-md dark:bg-red-900 dark:text-red-100 text-sm">
-              {error}
+              <button
+                onClick={confirmClearChat}
+                className="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600"
+              >
+                Clear Chat
+              </button>
             </div>
-          )}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Admin Panel */}
       {isAdmin && (
