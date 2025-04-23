@@ -3,8 +3,11 @@ import { withAuth } from 'next-auth/middleware';
 
 export default withAuth(
   function middleware(req) {
-    // If someone tries to access /login, redirect them to kellogg.noyesai.com
-    if (req.nextUrl.pathname === '/login') {
+    const isLoginPath = req.nextUrl.pathname === '/login';
+    const host = req.headers.get('host');
+
+    // Only redirect if we're not already on kellogg.noyesai.com
+    if (isLoginPath && host !== 'kellogg.noyesai.com') {
       return NextResponse.redirect('https://kellogg.noyesai.com');
     }
     return NextResponse.next();
