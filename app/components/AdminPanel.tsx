@@ -92,28 +92,59 @@ export function AdminPanel({ isOpen, onClose, currentDemo, onUpdateDemo }: Admin
     }
   };
 
-  const handleAssistantSave = (updatedAssistant: AssistantFormData) => {
-    setEditedDemo(prev => ({
-      ...prev,
-      assistants: prev.assistants.map(a => 
-        a.id === updatedAssistant.id ? {
-          ...updatedAssistant,
-          promptMarkdownPath: a.promptMarkdownPath || `demos/${editedDemo.id}/markdown/${updatedAssistant.id}.md`,
-          iconPath: updatedAssistant.iconPath || a.iconPath
-        } : a
-      ).concat(
-        prev.assistants.find(a => a.id === updatedAssistant.id) ? [] : [{
-          ...updatedAssistant,
-          promptMarkdownPath: `demos/${editedDemo.id}/markdown/${updatedAssistant.id}.md`,
-          iconPath: updatedAssistant.iconPath
-        }]
-      )
-    }));
-    setIsAssistantEditOpen(false);
-    setSelectedAssistant(null);
-    
-    // Refresh the page to show updated changes
-    window.location.reload();
+  const handleAssistantSave = async (updatedAssistant: AssistantFormData) => {
+    try {
+      // Find the existing assistant to preserve paths if not changed
+      const existingAssistant = editedDemo.assistants.find(a => a.id === updatedAssistant.id);
+      
+      // Preserve existing paths if not changed in this update
+      const assistantToUpdate = {
+        ...updatedAssistant,
+        iconPath: updatedAssistant.iconPath || existingAssistant?.iconPath,
+        promptMarkdownPath: existingAssistant?.promptMarkdownPath || `demos/${editedDemo.id}/markdown/${updatedAssistant.id}.md`
+      };
+
+      // First update the assistant in S3
+      const response = await fetch(`/api/demos/${currentDemo.id}/assistants/${updatedAssistant.id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(assistantToUpdate),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to update assistant');
+      }
+
+      // Update local state
+      setEditedDemo(prev => ({
+        ...prev,
+        assistants: prev.assistants.map(a => 
+          a.id === updatedAssistant.id ? assistantToUpdate : a
+        )
+      }));
+
+      // Close the assistant edit modal
+      setIsAssistantEditOpen(false);
+      setSelectedAssistant(null);
+
+      // Fetch the latest demo data to ensure we have the most up-to-date version
+      const demoResponse = await fetch(`/api/demos/${currentDemo.id}`);
+      if (!demoResponse.ok) {
+        throw new Error('Failed to fetch updated demo data');
+      }
+      const updatedDemo = await demoResponse.json();
+      
+      // Update the demo data in the parent component
+      onUpdateDemo(updatedDemo);
+
+      // Force a page refresh to ensure all components reflect the new data
+      window.location.reload();
+    } catch (error) {
+      console.error('Error saving assistant:', error);
+      alert('Failed to save assistant. Please try again.');
+    }
   };
 
   return (

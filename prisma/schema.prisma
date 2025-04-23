@@ -1,0 +1,66 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../node_modules/.prisma/client"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id             String            @id @default(uuid())
+  email          String            @unique
+  username       String?
+  cognitoId      String?           @unique
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+  canCreateCases Boolean           @default(false)
+  isAdmin        Boolean           @default(false)
+  isSuperAdmin   Boolean           @default(false)
+  adminOf        AdminCaseAccess[]
+  createdCases   Case[]
+  caseAccess     CaseAccess[]
+}
+
+model Case {
+  id          String            @id @default(uuid())
+  name        String
+  description String?
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  creatorId   String
+  adminAccess AdminCaseAccess[]
+  creator     User              @relation(fields: [creatorId], references: [id])
+  userAccess  CaseAccess[]
+}
+
+model CaseAccess {
+  id      String   @id @default(uuid())
+  userId  String
+  caseId  String
+  addedBy String
+  addedAt DateTime @default(now())
+  role    CaseRole @default(STUDENT)
+  case    Case     @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, caseId])
+}
+
+model AdminCaseAccess {
+  id      String   @id @default(uuid())
+  userId  String
+  caseId  String
+  addedBy String
+  addedAt DateTime @default(now())
+  case    Case     @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  admin   User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, caseId])
+}
+
+enum CaseRole {
+  STUDENT
+  PROFESSOR
+}

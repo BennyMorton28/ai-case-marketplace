@@ -12,9 +12,11 @@ import rehypeHighlight from 'rehype-highlight';
 import 'katex/dist/katex.min.css';
 import 'highlight.js/styles/github-dark.css';
 import DemoIcon from './DemoIcon';
-import { TrashIcon, ArrowDownTrayIcon } from '@heroicons/react/24/outline';
+import { TrashIcon, ArrowDownTrayIcon, PencilIcon } from '@heroicons/react/24/outline';
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
+import { useAuth } from '../contexts/AuthContext';
+import AdminPanel from './AdminPanel';
 
 interface StreamingResponse {
   item_id: string;
@@ -41,11 +43,54 @@ export default function StreamingChat({ assistantId, assistantName, caseId, assi
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showExportOptions, setShowExportOptions] = useState(false);
+  const [isAdminPanelOpen, setIsAdminPanelOpen] = useState(false);
+  const [showClearConfirmation, setShowClearConfirmation] = useState(false);
+  const [caseConfig, setCaseConfig] = useState<any>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const chatContainerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const exportOptionsRef = useRef<HTMLDivElement>(null);
+  const { isAdmin } = useAuth();
+
+  // Fetch the case configuration when needed for admin panel
+  useEffect(() => {
+    const fetchCaseConfig = async () => {
+      try {
+        const response = await fetch(`/api/demos/${caseId}`);
+        if (response.ok) {
+          const config = await response.json();
+          setCaseConfig(config);
+        }
+      } catch (error) {
+        console.error('Error fetching case config:', error);
+      }
+    };
+
+    if (isAdminPanelOpen && !caseConfig) {
+      fetchCaseConfig();
+    }
+  }, [isAdminPanelOpen, caseId, caseConfig]);
+
+  const onUpdateDemo = async (updatedDemo: any) => {
+    try {
+      const response = await fetch(`/api/demos/${caseId}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(updatedDemo),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to update demo');
+      }
+
+      setCaseConfig(updatedDemo);
+    } catch (error) {
+      console.error('Error updating demo:', error);
+    }
+  };
 
   // Close export options when clicking outside
   useEffect(() => {
@@ -79,6 +124,10 @@ export default function StreamingChat({ assistantId, assistantName, caseId, assi
 
   // Function to handle clearing the chat
   const handleClearChat = () => {
+    setShowClearConfirmation(true);
+  };
+
+  const confirmClearChat = () => {
     // If there's an ongoing request, abort it
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
@@ -90,11 +139,16 @@ export default function StreamingChat({ assistantId, assistantName, caseId, assi
     setInput('');
     setIsLoading(false);
     setError(null);
+    setShowClearConfirmation(false);
     
     // Focus the input field after clearing
     if (inputRef.current) {
       inputRef.current.focus();
     }
+  };
+
+  const cancelClearChat = () => {
+    setShowClearConfirmation(false);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -579,61 +633,65 @@ export default function StreamingChat({ assistantId, assistantName, caseId, assi
         className="flex-1 overflow-y-auto px-4 py-4 space-y-4 bg-gray-50 dark:bg-gray-900"
         style={{ paddingBottom: '120px' }}
       >
+        {/* Clear Chat Confirmation Modal */}
+        {showClearConfirmation && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-sm w-full mx-4 shadow-xl">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+                Clear Chat History?
+              </h3>
+              <p className="text-gray-600 dark:text-gray-300 mb-6">
+                Are you sure you want to clear the chat? This action cannot be undone.
+              </p>
+              <div className="flex justify-end space-x-3">
+                <button
+                  onClick={cancelClearChat}
+                  className="px-4 py-2 text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 rounded-md hover:bg-gray-200 dark:hover:bg-gray-600"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={confirmClearChat}
+                  className="px-4 py-2 text-white bg-red-500 rounded-md hover:bg-red-600"
+                >
+                  Clear Chat
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {messages.map((message, index) => (
           <div
             key={index}
             className={`flex ${message.type === 'user' ? 'justify-end' : 'justify-start'}`}
           >
             <div
-              className={`max-w-[80%] rounded-lg p-4 ${
+              className={`${
                 message.type === 'user'
-                  ? 'bg-blue-500 text-white ml-4'
-                  : 'bg-white dark:bg-gray-800 mr-4'
-              }`}
+                  ? 'bg-blue-500 text-white'
+                  : 'bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700'
+              } rounded-lg px-4 py-2 max-w-[80%] shadow-sm`}
             >
-              {message.type === 'user' ? (
-                <p className="whitespace-pre-wrap m-0 text-white">{message.content}</p>
-              ) : (
-                <div className="prose prose-sm md:prose-base dark:prose-invert math-content max-w-none">
+              {message.type === 'assistant' ? (
+                <div className="prose dark:prose-invert max-w-none">
                   <ReactMarkdown
                     remarkPlugins={[remarkGfm, remarkMath]}
-                    rehypePlugins={[rehypeRaw, rehypeSanitize, [rehypeKatex, {throwOnError: false, output: 'html', trust: true}], rehypeHighlight]}
-                    components={{
-                      h1: ({children, ...props}: React.ComponentPropsWithoutRef<'h1'>) => <h1 className="text-3xl font-bold mt-8 mb-4" {...props}>{children}</h1>,
-                      h2: ({children, ...props}: React.ComponentPropsWithoutRef<'h2'>) => <h2 className="text-2xl font-semibold mt-6 mb-3" {...props}>{children}</h2>,
-                      h3: ({children, ...props}: React.ComponentPropsWithoutRef<'h3'>) => <h3 className="text-xl font-medium mt-4 mb-2" {...props}>{children}</h3>,
-                      p: ({children, ...props}: React.ComponentPropsWithoutRef<'p'>) => <p className="my-4 leading-relaxed" {...props}>{children}</p>,
-                      ul: ({children, ...props}: React.ComponentPropsWithoutRef<'ul'>) => <ul className="list-disc list-inside my-4 space-y-2" {...props}>{children}</ul>,
-                      ol: ({children, ...props}: React.ComponentPropsWithoutRef<'ol'>) => <ol className="list-decimal list-inside my-4 space-y-2" {...props}>{children}</ol>,
-                      li: ({children, ...props}: React.ComponentPropsWithoutRef<'li'>) => <li className="ml-4" {...props}>{children}</li>,
-                      code: ({className, children, ...props}: React.ComponentPropsWithoutRef<'code'>) => {
-                        const isInline = !className?.includes('language-');
-                        return isInline ? (
-                          <code className="bg-gray-100 dark:bg-gray-800 rounded px-1 py-0.5 text-sm" {...props}>{children}</code>
-                        ) : (
-                          <code className="block bg-gray-100 dark:bg-gray-800 rounded p-4 my-4 overflow-x-auto text-sm" {...props}>{children}</code>
-                        );
-                      },
-                      pre: ({children, ...props}: React.ComponentPropsWithoutRef<'pre'>) => <pre className="bg-gray-100 dark:bg-gray-800 rounded p-4 my-4 overflow-x-auto" {...props}>{children}</pre>,
-                      blockquote: ({children, ...props}: React.ComponentPropsWithoutRef<'blockquote'>) => <blockquote className="border-l-4 border-gray-300 dark:border-gray-600 pl-4 my-4 italic" {...props}>{children}</blockquote>,
-                      a: ({children, ...props}: React.ComponentPropsWithoutRef<'a'>) => <a className="text-blue-500 hover:text-blue-600 underline" {...props}>{children}</a>,
-                      table: ({children, ...props}: React.ComponentPropsWithoutRef<'table'>) => <div className="overflow-x-auto my-6"><table className="min-w-full divide-y divide-gray-300 dark:divide-gray-600" {...props}>{children}</table></div>,
-                      th: ({children, ...props}: React.ComponentPropsWithoutRef<'th'>) => <th className="px-4 py-2 bg-gray-100 dark:bg-gray-800 font-semibold text-left" {...props}>{children}</th>,
-                      td: ({children, ...props}: React.ComponentPropsWithoutRef<'td'>) => <td className="px-4 py-2 border-t border-gray-200 dark:border-gray-700" {...props}>{children}</td>,
-                      img: ({...props}: React.ComponentPropsWithoutRef<'img'>) => <img className="max-w-full h-auto rounded my-4" {...props} />
-                    }}
+                    rehypePlugins={[rehypeKatex, rehypeRaw, rehypeSanitize, rehypeHighlight]}
                   >
                     {message.content}
                   </ReactMarkdown>
                 </div>
+              ) : (
+                <p>{message.content}</p>
               )}
             </div>
           </div>
         ))}
-        <div ref={messagesEndRef} className="h-[20px]" />
+        <div ref={messagesEndRef} />
       </div>
 
-      {/* Input Box - Fixed above bottom bar */}
+      {/* Message Input - Fixed at bottom */}
       <div className="fixed left-0 right-0 bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 p-4" style={{ bottom: '60px', zIndex: 10 }}>
         <div className="max-w-7xl mx-auto">
           <form onSubmit={handleSubmit} className="flex gap-2 w-full">
@@ -670,6 +728,16 @@ export default function StreamingChat({ assistantId, assistantName, caseId, assi
           )}
         </div>
       </div>
+
+      {/* Admin Panel */}
+      {isAdmin && caseConfig && (
+        <AdminPanel
+          isOpen={isAdminPanelOpen}
+          onClose={() => setIsAdminPanelOpen(false)}
+          currentDemo={caseConfig}
+          onUpdateDemo={onUpdateDemo}
+        />
+      )}
     </div>
   );
 } 

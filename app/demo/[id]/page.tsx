@@ -10,7 +10,6 @@ import DemoIcon from '../../components/DemoIcon';
 import PasswordInput from '../../components/PasswordInput';
 import DocumentViewer from '../../components/DocumentViewer';
 import AdminPanel from '../../components/AdminPanel';
-import AuthButton from '../../components/AuthButton';
 import { useAuth } from '../../contexts/AuthContext';
 import type { Demo, Assistant, Document } from '../../../src/types';
 
@@ -34,7 +33,10 @@ const convertToViewerDocument = (doc: Document): ViewerDocument => ({
 
 export default function CaseInterface() {
   const params = useParams<{ id: string }>();
-  const caseId = params.id as string;
+  if (!params?.id) {
+    return <div>Invalid case ID</div>;
+  }
+  const caseId = params.id;
   const [selectedAssistant, setSelectedAssistant] = useState<Assistant | null>(null);
   const [unlockedAssistants, setUnlockedAssistants] = useState<Set<string>>(new Set());
   const [passwordError, setPasswordError] = useState<string>('');
@@ -45,15 +47,34 @@ export default function CaseInterface() {
   const [isCaseUnlocked, setIsCaseUnlocked] = useState<boolean>(false);
   const [isDocumentViewerOpen, setIsDocumentViewerOpen] = useState(false);
   const [isAdminPanelOpen, setIsAdminPanelOpen] = useState(false);
-  const { isAdmin, login, logout } = useAuth();
+  const { isAdmin, login, logout, user } = useAuth();
 
-  const handleAuthChange = (isAuthenticated: boolean) => {
-    if (isAuthenticated) {
-      login();
-    } else {
-      logout();
-    }
-  };
+  // Refresh auth context when the page loads
+  useEffect(() => {
+    const refreshAuth = async () => {
+      if (user?.email) {
+        try {
+          const response = await fetch('/api/users/check-admin', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              email: user.email,
+            }),
+          });
+          
+          if (!response.ok) {
+            console.error('Failed to refresh auth status');
+          }
+        } catch (error) {
+          console.error('Error refreshing auth status:', error);
+        }
+      }
+    };
+
+    refreshAuth();
+  }, [user?.email]);
 
   // Function to check password for assistants
   const checkPassword = (assistantId: string, password: string): boolean => {
@@ -274,7 +295,6 @@ export default function CaseInterface() {
                   Documents
                 </button>
               )}
-              <AuthButton onAuthChange={handleAuthChange} />
               {isAdmin && (
                 <button
                   onClick={() => setIsAdminPanelOpen(true)}

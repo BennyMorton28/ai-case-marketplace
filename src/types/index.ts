@@ -27,6 +27,7 @@ export interface Assistant {
     description?: string;
     previewImage?: string;
   }
+  promptContent?: string;
 }
 
 export interface Document {

@@ -3,6 +3,7 @@ import { GeistSans } from "geist/font/sans";
 import { GeistMono } from "geist/font/mono";
 import "./globals.css";
 import { AuthProvider } from './contexts/AuthContext';
+import NavBar from './components/NavBar';
 
 export const metadata: Metadata = {
   title: "Noyes AI Demos",
@@ -30,7 +31,12 @@ export default function RootLayout({
       </head>
       <body>
         <AuthProvider>
-          {children}
+          <div className="min-h-screen flex flex-col">
+            <NavBar />
+            <main className="flex-grow">
+              {children}
+            </main>
+          </div>
         </AuthProvider>
       </body>
     </html>

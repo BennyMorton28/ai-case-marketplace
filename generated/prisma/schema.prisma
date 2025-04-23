@@ -1,0 +1,56 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// User model to store user information
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique // Primary identifier from SSO
+  username  String? // Optional display name that can be changed
+  cognitoId String?  @unique // Optional Cognito ID if we need to link to Cognito
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  caseAccess CaseAccess[]
+}
+
+// Case/Demo model
+model Case {
+  id          String   @id @default(uuid())
+  name        String
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  userAccess CaseAccess[]
+}
+
+// Junction table for user-case access
+model CaseAccess {
+  id      String   @id @default(uuid())
+  userId  String
+  caseId  String
+  addedBy String // Email of the professor who added the user
+  addedAt DateTime @default(now())
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  case Case @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  // Composite unique constraint
+  @@unique([userId, caseId])
+}

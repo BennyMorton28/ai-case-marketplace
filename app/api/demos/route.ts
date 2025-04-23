@@ -4,6 +4,20 @@ import path from 'path';
 import { ensureDirectoryExists, validatePathWritable, getSavePaths } from '../../lib/files';
 import { uploadToS3, s3Client, BUCKET_NAME, getSignedDownloadUrl } from '../../lib/s3';
 import { ListObjectsV2Command, GetObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3';
+import { prisma } from '@/lib/prisma';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '../auth/[...nextauth]/route';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+
+// Infer types from Prisma client
+type Case = Awaited<ReturnType<typeof prisma.case.findUnique>>;
+type CaseAccess = Awaited<ReturnType<typeof prisma.caseAccess.findUnique>>;
+type User = Awaited<ReturnType<typeof prisma.user.findUnique>>;
+
+type CaseWithAccess = NonNullable<Case> & {
+  userAccess: NonNullable<CaseAccess>[];
+  creator: NonNullable<User>;
+};
 
 // List of static demo IDs that should be excluded from API results
 const staticDemoIds = ['math-assistant', 'writing-assistant', 'language-assistant', 'coding-assistant'];
@@ -18,80 +32,137 @@ function getBasePath(): string {
 
 export async function GET() {
   try {
-    const listCommand = new ListObjectsV2Command({
-      Bucket: BUCKET_NAME,
-      Prefix: 'demos/',
-      Delimiter: '/'
+    const session = await getServerSession(authOptions);
+    if (!session?.user?.email) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    // Get the user and their case access
+    const user = await prisma.user.findUnique({
+      where: { email: session.user.email },
+      include: {
+        caseAccess: true,
+      },
     });
 
-    const { CommonPrefixes } = await s3Client.send(listCommand);
-    if (!CommonPrefixes) {
-      return new NextResponse(JSON.stringify([]), {
-        headers: { 'Content-Type': 'application/json' },
+    if (!user) {
+      return NextResponse.json({ error: 'User not found' }, { status: 404 });
+    }
+
+    console.log('DEBUG - User:', {
+      id: user.id,
+      email: user.email,
+      isAdmin: user.isAdmin,
+      isSuperAdmin: user.isSuperAdmin,
+      caseAccessCount: user.caseAccess.length,
+      caseAccessIds: user.caseAccess.map((ca: CaseAccess) => ca.caseId)
+    });
+
+    // Get all cases the user has access to
+    const cases = await prisma.case.findMany({
+      where: {
+        OR: [
+          // Cases the user has explicit access to through CaseAccess
+          {
+            userAccess: {
+              some: {
+                userId: user.id,
+              },
+            },
+          },
+          // Cases created by the user
+          {
+            creatorId: user.id,
+          },
+          // All cases if user is admin or superadmin
+          ...(user.isAdmin || user.isSuperAdmin ? [{}] : []),
+        ],
+      },
+      include: {
+        userAccess: true,
+        creator: true,
+      },
+    });
+
+    console.log('DEBUG - Found cases:', cases.map((c: CaseWithAccess) => ({
+      id: c.id,
+      name: c.name,
+      creatorId: c.creatorId,
+      accessCount: c.userAccess.length,
+      userHasAccess: c.userAccess.some((ua: CaseAccess) => ua.userId === user.id),
+      isCreator: c.creatorId === user.id
+    })));
+
+    // Filter out cases that the user doesn't have access to
+    const filteredCases = cases.filter((ca: CaseWithAccess) => {
+      const hasAdminAccess = user.isAdmin || user.isSuperAdmin;
+      const isCreator = ca.creatorId === user.id;
+      const hasExplicitAccess = ca.userAccess.some((access: CaseAccess) => access.userId === user.id);
+      
+      console.log('DEBUG - Case access check:', {
+        caseId: ca.id,
+        caseName: ca.name,
+        hasAdminAccess,
+        isCreator,
+        hasExplicitAccess,
+        allowed: hasAdminAccess || isCreator || hasExplicitAccess
       });
-    }
 
-    const demos = [];
-    for (const prefix of CommonPrefixes) {
-      if (!prefix.Prefix) continue;
-      const demoId = prefix.Prefix.split('/')[1];
-      if (staticDemoIds.includes(demoId)) continue;
-
-      try {
-        // Check if config.json exists first
-        const configKey = `${prefix.Prefix}config.json`;
-        try {
-          await s3Client.send(new HeadObjectCommand({
-            Bucket: BUCKET_NAME,
-            Key: configKey
-          }));
-        } catch {
-          // Skip this demo if config.json doesn't exist
-          continue;
-        }
-
-        // Get the config.json for this demo
-        const configCommand = new GetObjectCommand({
-          Bucket: BUCKET_NAME,
-          Key: configKey
-        });
-
-        const configResponse = await s3Client.send(configCommand);
-        if (!configResponse.Body) continue;
-
-        const configText = await configResponse.Body.transformToString();
-        const config = JSON.parse(configText);
-
-        if (config.iconPath) {
-          config.iconUrl = await getSignedDownloadUrl(config.iconPath);
-        }
-
-        if (config.assistants) {
-          for (const assistant of config.assistants) {
-            if (assistant.iconPath) {
-              assistant.iconUrl = await getSignedDownloadUrl(assistant.iconPath);
-            }
-          }
-        }
-
-        demos.push(config);
-      } catch (error: any) {
-        console.error(`Error processing demo ${demoId}:`, error?.message || 'Unknown error');
-        continue;
-      }
-    }
-
-    return new NextResponse(JSON.stringify(demos), {
-      headers: { 'Content-Type': 'application/json' },
+      return hasAdminAccess || isCreator || hasExplicitAccess;
     });
+
+    console.log('DEBUG - Accessible cases:', filteredCases.map((c: CaseWithAccess) => ({
+      id: c.id,
+      name: c.name
+    })));
+
+    // Generate signed URLs for icons
+    const casesWithUrls = await Promise.all(filteredCases.map(async (c: CaseWithAccess) => {
+      let iconUrl;
+      // Get the icon path from S3 metadata since it's not in the Prisma schema
+      const s3IconPath = `demos/${c.id}/icon.svg`;
+      try {
+        if (!process.env.AWS_S3_BUCKET_NAME) {
+          throw new Error('AWS_S3_BUCKET_NAME not configured');
+        }
+        const command = new GetObjectCommand({
+          Bucket: process.env.AWS_S3_BUCKET_NAME,
+          Key: s3IconPath,
+        });
+        iconUrl = await getSignedUrl(s3Client, command, { expiresIn: 3600 });
+      } catch (error) {
+        console.error(`Error getting signed URL for icon: ${error}`);
+        // Continue without the icon URL if there's an error
+      }
+
+      return {
+        id: c.id,
+        name: c.name,
+        description: c.description,
+        iconUrl,
+        createdAt: c.createdAt,
+        updatedAt: c.updatedAt,
+      };
+    }));
+
+    return NextResponse.json(casesWithUrls);
   } catch (error) {
-    console.error('Error listing demos:', error);
-    return new NextResponse('Error listing demos', { status: 500 });
+    console.error('Error processing demos:', error);
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    );
   }
 }
 
 export async function POST(request: NextRequest) {
   try {
+    // Get the current user's session
+    const session = await getServerSession(authOptions);
+    if (!session?.user?.email) {
+      return new NextResponse('Unauthorized', { status: 401 });
+    }
+
     const formData = await request.formData();
     const demoData = JSON.parse(formData.get('demo') as string);
     
@@ -104,6 +175,45 @@ export async function POST(request: NextRequest) {
     if (demoData.hasPassword === true && !demoData.password) {
       return new NextResponse('Password is required when case is locked', { status: 400 });
     }
+
+    // Ensure the creator exists and is an admin
+    const creator = await prisma.user.upsert({
+      where: { email: session.user.email },
+      update: { isAdmin: true },
+      create: { email: session.user.email, isAdmin: true },
+    });
+
+    // Create or update the case in Prisma
+    const prismaCase = await prisma.case.upsert({
+      where: { id: demoData.id },
+      update: {
+        name: demoData.title,
+        description: demoData.description || null,
+        creatorId: creator.id,
+      },
+      create: {
+        id: demoData.id,
+        name: demoData.title,
+        description: demoData.description || null,
+        creatorId: creator.id,
+      },
+    });
+
+    // Grant admin access to the creator
+    await prisma.adminCaseAccess.upsert({
+      where: {
+        userId_caseId: {
+          userId: creator.id,
+          caseId: prismaCase.id,
+        },
+      },
+      update: {},
+      create: {
+        userId: creator.id,
+        caseId: prismaCase.id,
+        addedBy: creator.id,
+      },
+    });
 
     // Save demo icon if provided
     if (formData.has('icon')) {
