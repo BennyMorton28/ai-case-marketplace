@@ -1,7 +1,7 @@
 'use client';
 
 import { createContext, useContext, ReactNode, useState, useEffect } from 'react';
-import { useSession, signIn, signOut, SessionProvider } from 'next-auth/react';
+import { useSession, signIn, signOut } from 'next-auth/react';
 
 interface User {
   email: string;
@@ -83,8 +83,7 @@ function AuthContextProvider({ children }: { children: ReactNode }) {
   }, [session, status]);
 
   const login = () => {
-    // Add callbackUrl to prevent automatic redirects
-    signIn('azure-ad', { callbackUrl: window.location.href });
+    signIn('azure-ad');
   };
 
   const logout = () => {
@@ -108,13 +107,9 @@ function AuthContextProvider({ children }: { children: ReactNode }) {
   );
 }
 
-// Export the provider wrapper
+// Export the provider directly
 export function AuthProvider({ children }: { children: ReactNode }) {
-  return (
-    <SessionProvider>
-      <AuthContextProvider>{children}</AuthContextProvider>
-    </SessionProvider>
-  );
+  return <AuthContextProvider>{children}</AuthContextProvider>;
 }
 
 // Hook to use the auth context
