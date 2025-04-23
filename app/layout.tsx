@@ -4,6 +4,13 @@ import { GeistMono } from "geist/font/mono";
 import "./globals.css";
 import { AuthProvider } from './contexts/AuthContext';
 import NavBar from './components/NavBar';
+import { Toaster } from 'react-hot-toast';
+import { Inter } from 'next/font/google';
+import { getServerSession } from 'next-auth';
+import { authOptions } from './api/auth/[...nextauth]/route';
+import { SessionProvider } from './components/SessionProvider';
+
+const inter = Inter({ subsets: ['latin'] });
 
 export const metadata: Metadata = {
   title: "Noyes AI Demos",
@@ -17,11 +24,13 @@ export const metadata: Metadata = {
   }
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const session = await getServerSession(authOptions);
+
   return (
     <html lang="en" className={`${GeistSans.className} antialiased`}>
       <head>
@@ -29,15 +38,41 @@ export default function RootLayout({
         <link rel="icon" href="/favicon-32x32.png" type="image/png" sizes="32x32" />
         <link rel="icon" href="/favicon-16x16.png" type="image/png" sizes="16x16" />
       </head>
-      <body>
-        <AuthProvider>
-          <div className="min-h-screen flex flex-col">
-            <NavBar />
-            <main className="flex-grow">
-              {children}
-            </main>
-          </div>
-        </AuthProvider>
+      <body className={inter.className}>
+        <SessionProvider session={session}>
+          <AuthProvider>
+            <div className="min-h-screen flex flex-col">
+              <NavBar />
+              <main className="flex-grow">
+                {children}
+              </main>
+            </div>
+            <Toaster
+              position="top-right"
+              toastOptions={{
+                duration: 3000,
+                style: {
+                  background: '#333',
+                  color: '#fff',
+                },
+                success: {
+                  duration: 3000,
+                  iconTheme: {
+                    primary: '#68D391',
+                    secondary: '#fff',
+                  },
+                },
+                error: {
+                  duration: 4000,
+                  iconTheme: {
+                    primary: '#F56565',
+                    secondary: '#fff',
+                  },
+                },
+              }}
+            />
+          </AuthProvider>
+        </SessionProvider>
       </body>
     </html>
   );

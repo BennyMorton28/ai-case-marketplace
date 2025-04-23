@@ -12,11 +12,12 @@ import rehypeHighlight from 'rehype-highlight';
 import 'katex/dist/katex.min.css';
 import 'highlight.js/styles/github-dark.css';
 import DemoIcon from './DemoIcon';
-import { TrashIcon, ArrowDownTrayIcon, PencilIcon } from '@heroicons/react/24/outline';
+import { TrashIcon, ArrowDownTrayIcon, PencilIcon, UserPlusIcon } from '@heroicons/react/24/outline';
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
 import { useAuth } from '../contexts/AuthContext';
 import AdminPanel from './AdminPanel';
+import ManageStudentsModal from './ManageStudentsModal';
 
 interface StreamingResponse {
   item_id: string;
@@ -44,6 +45,7 @@ export default function StreamingChat({ assistantId, assistantName, caseId, assi
   const [error, setError] = useState<string | null>(null);
   const [showExportOptions, setShowExportOptions] = useState(false);
   const [isAdminPanelOpen, setIsAdminPanelOpen] = useState(false);
+  const [isManageStudentsOpen, setIsManageStudentsOpen] = useState(false);
   const [showClearConfirmation, setShowClearConfirmation] = useState(false);
   const [caseConfig, setCaseConfig] = useState<any>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -730,13 +732,20 @@ export default function StreamingChat({ assistantId, assistantName, caseId, assi
       </div>
 
       {/* Admin Panel */}
-      {isAdmin && caseConfig && (
-        <AdminPanel
-          isOpen={isAdminPanelOpen}
-          onClose={() => setIsAdminPanelOpen(false)}
-          currentDemo={caseConfig}
-          onUpdateDemo={onUpdateDemo}
-        />
+      {isAdmin && (
+        <>
+          <AdminPanel
+            isOpen={isAdminPanelOpen}
+            onClose={() => setIsAdminPanelOpen(false)}
+            currentDemo={caseConfig}
+            onUpdateDemo={onUpdateDemo}
+          />
+          <ManageStudentsModal
+            isOpen={isManageStudentsOpen}
+            onClose={() => setIsManageStudentsOpen(false)}
+            caseId={caseId}
+          />
+        </>
       )}
     </div>
   );

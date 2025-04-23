@@ -5,16 +5,12 @@ import { prisma } from '@/lib/prisma';
 import { s3Client } from '../../lib/s3';
 import { ListObjectsV2Command, GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
-import type { Prisma } from '@prisma/client';
+import type { Prisma, Case, CaseRole } from '@prisma/client';
 
 // List of static demo IDs that should be excluded from API results
 const staticDemoIds = ['math-assistant', 'writing-assistant', 'language-assistant', 'coding-assistant'];
 
-interface CaseWithRelations {
-  id: string;
-  name: string;
-  description: string | null;
-  creatorId: string;
+type CaseWithRelations = Case & {
   creator: {
     id: string;
     email: string;
@@ -25,7 +21,7 @@ interface CaseWithRelations {
       email: string;
     };
   }>;
-}
+};
 
 // GET /api/cases - Get all cases
 export async function GET(request: Request) {
@@ -47,6 +43,8 @@ export async function GET(request: Request) {
     if (!user) {
       return NextResponse.json({ error: 'User not found' }, { status: 404 });
     }
+
+    const isSuperAdmin = user.email === 'ben.morton@law.northwestern.edu';
 
     // List all demo directories in S3
     const command = new ListObjectsV2Command({
@@ -80,57 +78,82 @@ export async function GET(request: Request) {
         });
 
         // Sync the case with Prisma
-        await prisma.case.upsert({
+        const existingCase = await prisma.case.findUnique({
+          where: { id: demoId },
+          include: {
+            userAccess: true
+          }
+        });
+
+        const caseResult = await prisma.case.upsert({
           where: { id: demoId },
           create: {
             id: demoId,
             name: configData.title || demoId,
             description: configData.description || null,
             creatorId: creator.id,
+            userAccess: {
+              create: {
+                userId: creator.id,
+                role: 'PROFESSOR' as CaseRole,
+                addedBy: creator.id
+              }
+            }
           },
           update: {
             name: configData.title || demoId,
             description: configData.description || null,
           }
         });
+
+        // If super admin, ensure they have access
+        if (isSuperAdmin) {
+          await prisma.caseAccess.upsert({
+            where: {
+              userId_caseId: {
+                userId: user.id,
+                caseId: demoId
+              }
+            },
+            create: {
+              userId: user.id,
+              caseId: demoId,
+              role: 'PROFESSOR' as CaseRole,
+              addedBy: user.id
+            },
+            update: {
+              role: 'PROFESSOR' as CaseRole
+            }
+          });
+        }
       } catch (error) {
         console.error(`Error processing demo ${demoId}:`, error);
         // Continue with next demo if one fails
       }
     }
 
-    // Now get all cases from Prisma
+    // Now get all cases from Prisma with proper type safety
     const cases = await prisma.case.findMany({
-      where: {
-        AND: [
-          {
-            id: {
-              notIn: staticDemoIds
-            }
-          },
-          {
-            OR: [
-              // Cases the user has explicit access to
+      where: isSuperAdmin 
+        ? { id: { notIn: staticDemoIds } }
+        : {
+            AND: [
+              { id: { notIn: staticDemoIds } },
               {
-                userAccess: {
-                  some: {
-                    userId: user.id,
-                    role: {
-                      in: ['STUDENT', 'PROFESSOR']
+                OR: [
+                  {
+                    userAccess: {
+                      some: {
+                        userId: user.id,
+                        role: { in: ['STUDENT', 'PROFESSOR'] as CaseRole[] }
+                      }
                     }
                   },
-                },
-              },
-              // Cases created by the user
-              {
-                creatorId: user.id,
-              },
-              // All cases if user is admin or superadmin
-              ...(user.isAdmin || user.isSuperAdmin ? [{}] : []),
-            ],
-          }
-        ]
-      },
+                  { creatorId: user.id }
+                ]
+              }
+            ]
+          },
       include: {
         creator: {
           select: {
@@ -156,7 +179,7 @@ export async function GET(request: Request) {
 
     // Generate signed URLs for icons
     const casesWithUrls = await Promise.all(
-      cases.map(async (c: CaseWithRelations) => {
+      cases.map(async (c) => {
         let iconUrl;
         const s3IconPath = `demos/${c.id}/icon.svg`;
         try {
@@ -181,4 +204,4 @@ export async function GET(request: Request) {
     console.error('Error fetching cases:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
-} 
+}

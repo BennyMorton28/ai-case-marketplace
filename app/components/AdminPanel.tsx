@@ -118,17 +118,17 @@ export function AdminPanel({ isOpen, onClose, currentDemo, onUpdateDemo }: Admin
       }
 
       // Update local state
-      setEditedDemo(prev => ({
-        ...prev,
-        assistants: prev.assistants.map(a => 
+    setEditedDemo(prev => ({
+      ...prev,
+      assistants: prev.assistants.map(a => 
           a.id === updatedAssistant.id ? assistantToUpdate : a
-        )
-      }));
+      )
+    }));
 
       // Close the assistant edit modal
-      setIsAssistantEditOpen(false);
-      setSelectedAssistant(null);
-
+    setIsAssistantEditOpen(false);
+    setSelectedAssistant(null);
+    
       // Fetch the latest demo data to ensure we have the most up-to-date version
       const demoResponse = await fetch(`/api/demos/${currentDemo.id}`);
       if (!demoResponse.ok) {
@@ -140,7 +140,7 @@ export function AdminPanel({ isOpen, onClose, currentDemo, onUpdateDemo }: Admin
       onUpdateDemo(updatedDemo);
 
       // Force a page refresh to ensure all components reflect the new data
-      window.location.reload();
+    window.location.reload();
     } catch (error) {
       console.error('Error saving assistant:', error);
       alert('Failed to save assistant. Please try again.');

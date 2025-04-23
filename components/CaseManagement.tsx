@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
 import UserImport from './UserImport';
+import { TrashIcon } from '@heroicons/react/24/outline';
+import { toast } from 'react-hot-toast';
 
 interface Case {
   id: string;
@@ -11,6 +13,13 @@ interface Case {
       id: string;
       email: string;
       username: string | null;
+    };
+  }[];
+  creatorId: string;
+  adminAccess: {
+    admin: {
+      id: string;
+      email: string;
     };
   }[];
 }
@@ -24,6 +33,7 @@ export default function CaseManagement() {
   const [newCaseDescription, setNewCaseDescription] = useState('');
   const [selectedCase, setSelectedCase] = useState<string | null>(null);
   const [showImportForm, setShowImportForm] = useState(false);
+  const [showDeleteConfirmation, setShowDeleteConfirmation] = useState<string | null>(null);
 
   // Fetch cases on component mount
   useEffect(() => {
@@ -111,6 +121,39 @@ export default function CaseManagement() {
     fetchCases();
   };
 
+  const handleDeleteCase = async (caseId: string) => {
+    try {
+      const response = await fetch(`/api/cases/${caseId}`, {
+        method: 'DELETE',
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(errorText || 'Failed to delete case');
+      }
+
+      // Remove the case from the list
+      setCases(cases.filter(c => c.id !== caseId));
+      toast.success('Case deleted successfully');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to delete case');
+    } finally {
+      setShowDeleteConfirmation(null);
+    }
+  };
+
+  const hasAdminAccess = (case_: Case) => {
+    if (!session?.user?.email) return false;
+    
+    // Check if user is the creator
+    const isCreator = case_.creatorId === session.user.email;
+    
+    // Check if user has admin access
+    const isAdmin = case_.adminAccess.some(access => access.admin.email === session.user.email);
+    
+    return isCreator || isAdmin;
+  };
+
   if (!session) {
     return <div>You must be logged in to manage cases.</div>;
   }
@@ -172,7 +215,7 @@ export default function CaseManagement() {
         ) : (
           <div className="space-y-4">
             {cases.map((case_) => (
-              <div key={case_.id} className="border rounded-md p-4">
+              <div key={case_.id} className="border rounded-md p-4 group relative">
                 <div className="flex justify-between items-start">
                   <div>
                     <h3 className="text-lg font-medium">{case_.name}</h3>
@@ -183,12 +226,24 @@ export default function CaseManagement() {
                       {case_.userAccess.length} user(s) have access
                     </p>
                   </div>
-                  <button
-                    onClick={() => handleCaseSelect(case_.id)}
-                    className="px-3 py-1 text-sm bg-indigo-100 text-indigo-700 rounded-md hover:bg-indigo-200"
-                  >
-                    Manage Users
-                  </button>
+                  <div className="flex space-x-2">
+                    <button
+                      onClick={() => handleCaseSelect(case_.id)}
+                      className="px-3 py-1 text-sm bg-indigo-100 text-indigo-700 rounded-md hover:bg-indigo-200"
+                    >
+                      Manage Users
+                    </button>
+                    
+                    {hasAdminAccess(case_) && (
+                      <button
+                        onClick={() => setShowDeleteConfirmation(case_.id)}
+                        className="px-3 py-1 text-sm bg-red-100 text-red-700 rounded-md hover:bg-red-200 opacity-0 group-hover:opacity-100 transition-opacity duration-200"
+                        title="Delete case"
+                      >
+                        <TrashIcon className="h-5 w-5" />
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
             ))}
@@ -201,6 +256,117 @@ export default function CaseManagement() {
           <UserImport caseId={selectedCase} onImportComplete={handleImportComplete} />
         </div>
       )}
+      
+      {/* Delete Confirmation Modal */}
+      {showDeleteConfirmation && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-sm w-full mx-4 shadow-xl">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+              Delete Case?
+            </h3>
+            <p className="text-gray-600 dark:text-gray-300 mb-6">
+              Are you sure you want to delete this case? This action cannot be undone.
+            </p>
+            <div className="flex justify-end space-x-3">
+              <button
+                onClick={() => setShowDeleteConfirmation(null)}
+                className="px-4 py-2 text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 rounded-md hover:bg-gray-200 dark:hover:bg-gray-600"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => handleDeleteCase(showDeleteConfirmation)}
+                className="px-4 py-2 text-white bg-red-500 rounded-md hover:bg-red-600"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
+}       
+      <div className="bg-white p-6 rounded-lg shadow-md">
+        <h2 className="text-xl font-semibold mb-4">Your Cases</h2>
+        
+        {isLoading ? (
+          <p>Loading cases...</p>
+        ) : cases.length === 0 ? (
+          <p>You don't have any cases yet.</p>
+        ) : (
+          <div className="space-y-4">
+            {cases.map((case_) => (
+              <div key={case_.id} className="border rounded-md p-4 group relative">
+                <div className="flex justify-between items-start">
+                  <div>
+                    <h3 className="text-lg font-medium">{case_.name}</h3>
+                    {case_.description && (
+                      <p className="text-sm text-gray-500 mt-1">{case_.description}</p>
+                    )}
+                    <p className="text-sm text-gray-500 mt-2">
+                      {case_.userAccess.length} user(s) have access
+                    </p>
+                  </div>
+                  <div className="flex space-x-2">
+                    <button
+                      onClick={() => handleCaseSelect(case_.id)}
+                      className="px-3 py-1 text-sm bg-indigo-100 text-indigo-700 rounded-md hover:bg-indigo-200"
+                    >
+                      Manage Users
+                    </button>
+                    
+                    {hasAdminAccess(case_) && (
+                      <button
+                        onClick={() => setShowDeleteConfirmation(case_.id)}
+                        className="px-3 py-1 text-sm bg-red-100 text-red-700 rounded-md hover:bg-red-200 opacity-0 group-hover:opacity-100 transition-opacity duration-200"
+                        title="Delete case"
+                      >
+                        <TrashIcon className="h-5 w-5" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+      
+      {showImportForm && selectedCase && (
+        <div className="mt-6">
+          <UserImport caseId={selectedCase} onImportComplete={handleImportComplete} />
+        </div>
+      )}
+      
+      {/* Delete Confirmation Modal */}
+      {showDeleteConfirmation && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-sm w-full mx-4 shadow-xl">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+              Delete Case?
+            </h3>
+            <p className="text-gray-600 dark:text-gray-300 mb-6">
+              Are you sure you want to delete this case? This action cannot be undone.
+            </p>
+            <div className="flex justify-end space-x-3">
+              <button
+                onClick={() => setShowDeleteConfirmation(null)}
+                className="px-4 py-2 text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 rounded-md hover:bg-gray-200 dark:hover:bg-gray-600"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => handleDeleteCase(showDeleteConfirmation)}
+                className="px-4 py-2 text-white bg-red-500 rounded-md hover:bg-red-600"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+
 } 

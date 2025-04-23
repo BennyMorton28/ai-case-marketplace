@@ -1,19 +1,21 @@
 'use client';
 
-import React from 'react';
-import { useState, useEffect } from 'react';
-import { useParams } from 'next/navigation';
+import React, { useState, useEffect } from 'react';
+import { useParams, useRouter } from 'next/navigation';
 import StreamingChat from '../../components/StreamingChat';
-import { ArrowLeftIcon, LockClosedIcon, LockOpenIcon, DocumentTextIcon, CogIcon, PencilIcon } from '@heroicons/react/24/outline';
+import { ArrowLeftIcon, LockClosedIcon, LockOpenIcon, DocumentTextIcon, CogIcon, PencilIcon, UserPlusIcon } from '@heroicons/react/24/outline';
 import Link from 'next/link';
 import DemoIcon from '../../components/DemoIcon';
 import PasswordInput from '../../components/PasswordInput';
 import DocumentViewer from '../../components/DocumentViewer';
 import AdminPanel from '../../components/AdminPanel';
+import ManageStudentsModal from '../../components/ManageStudentsModal';
 import { useAuth } from '../../contexts/AuthContext';
-import type { Demo, Assistant, Document } from '../../../src/types';
-
-type CaseConfig = Demo;
+import type { Demo } from '../../types/demo';
+import type { Document as CaseDocument } from '../../types/document';
+import type { Assistant } from '../../types/assistant';
+import { useSession } from 'next-auth/react';
+import { toast } from 'react-hot-toast';
 
 interface ViewerDocument {
   name: string;
@@ -23,32 +25,64 @@ interface ViewerDocument {
   size: number;
 }
 
-const convertToViewerDocument = (doc: Document): ViewerDocument => ({
-  name: doc.name,
-  description: doc.name, // Use name as description if none provided
+interface CaseConfig {
+  id: string;
+  title: string;
+  author: string;
+  name: string;
+  iconPath?: string;
+  password?: string;
+  explanationMarkdownPath: string;
+  assistants: Assistant[];
+  documents: CaseDocument[];
+  hasPassword: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface Demo {
+  id: string;
+  name: string;
+  description: string;
+  password?: string;
+  iconPath?: string;
+  assistants?: Assistant[];
+  documents?: CaseDocument[];
+  creator?: {
+    email: string;
+  };
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+const convertToViewerDocument = (doc: CaseDocument): ViewerDocument => ({
+  name: doc.title,
+  description: doc.title,
   key: doc.path,
-  type: doc.path.split('.').pop()?.toLowerCase() === 'pdf' ? 'application/pdf' : 'application/octet-stream',
-  size: 0 // Size will be determined when fetching
+  type: doc.type,
+  size: 0
 });
 
-export default function CaseInterface() {
-  const params = useParams<{ id: string }>();
-  if (!params?.id) {
-    return <div>Invalid case ID</div>;
-  }
-  const caseId = params.id;
-  const [selectedAssistant, setSelectedAssistant] = useState<Assistant | null>(null);
-  const [unlockedAssistants, setUnlockedAssistants] = useState<Set<string>>(new Set());
-  const [passwordError, setPasswordError] = useState<string>('');
-  const [caseConfig, setCaseConfig] = useState<CaseConfig | null>(null);
-  const [loading, setLoading] = useState<boolean>(true);
-  const [error, setError] = useState<string | null>(null);
-  const [casePassword, setCasePassword] = useState<string>('');
-  const [isCaseUnlocked, setIsCaseUnlocked] = useState<boolean>(false);
-  const [isDocumentViewerOpen, setIsDocumentViewerOpen] = useState(false);
+export default function DemoPage({ params }: { params: { id: string } }) {
+  const { data: session } = useSession();
+  const router = useRouter();
   const [isAdminPanelOpen, setIsAdminPanelOpen] = useState(false);
-  const { isAdmin, login, logout, user } = useAuth();
-
+  const [isManageStudentsOpen, setIsManageStudentsOpen] = useState(false);
+  const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
+  const [caseConfig, setCaseConfig] = useState<Demo | null>(null);
+  const [password, setPassword] = useState('');
+  const [isPasswordCorrect, setIsPasswordCorrect] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [documents, setDocuments] = useState<CaseDocument[]>([]);
+  const [assistants, setAssistants] = useState<Assistant[]>([]);
+  const [selectedDocument, setSelectedDocument] = useState<CaseDocument | null>(null);
+  const [isDocumentViewerOpen, setIsDocumentViewerOpen] = useState(false);
+  const [showAdminPanel, setShowAdminPanel] = useState(false);
+  const [showDocuments, setShowDocuments] = useState(false);
+  
+  const { user, isAdmin } = useAuth();
+  
   // Refresh auth context when the page loads
   useEffect(() => {
     const refreshAuth = async () => {
@@ -69,7 +103,7 @@ export default function CaseInterface() {
           }
         } catch (error) {
           console.error('Error refreshing auth status:', error);
-        }
+    }
       }
     };
 
@@ -91,62 +125,92 @@ export default function CaseInterface() {
 
   // Function to unlock the case
   const unlockCase = () => {
-    if (checkCasePassword(casePassword)) {
-      setIsCaseUnlocked(true);
-      setPasswordError('');
+    if (checkCasePassword(password)) {
+      setIsPasswordCorrect(true);
+      setError('');
     } else {
-      setPasswordError('Incorrect password');
+      setError('Incorrect password');
     }
   };
 
   // Function to unlock an assistant
   const unlockAssistant = (assistantId: string) => {
-    setUnlockedAssistants(prev => new Set([...prev, assistantId]));
+    setAssistants(prev => prev.map(a => a.id === assistantId ? { ...a, isUnlocked: true } : a));
   };
 
   // Fetch the case configuration
   useEffect(() => {
     const fetchCaseConfig = async () => {
       try {
-        setLoading(true);
+        setIsLoading(true);
         setError(null);
         
-        console.log(`Fetching case config from API: ${caseId}`);
-        const response = await fetch(`/api/demos/${caseId}`);
+        console.log(`Fetching case config from API: ${params.id}`);
+        const response = await fetch(`/api/demos/${params.id}`);
         
         if (response.ok) {
           const config = await response.json();
-          console.log(`Successfully fetched case config from API: ${caseId}`, config);
+          console.log(`Successfully fetched case config from API: ${params.id}`, config);
           console.log('Assistant data:', config.assistants);
           setCaseConfig(config);
+          setAssistants(config.assistants);
+          setDocuments(config.documents || []);
+          
+          // Automatically select the first unlocked assistant
+          const firstUnlockedAssistant = config.assistants?.find(a => !a.isLocked);
+          if (firstUnlockedAssistant) {
+            const doc: CaseDocument = {
+              path: firstUnlockedAssistant.name,
+              title: firstUnlockedAssistant.name,
+              type: 'assistant',
+              content: firstUnlockedAssistant.systemPrompt
+            };
+            setSelectedDocument(doc);
+          }
         } else {
-          console.error(`Case not found: ${caseId}`);
+          console.error(`Case not found: ${params.id}`);
           setError('Case not found');
         }
       } catch (err) {
         console.error('Error fetching case config:', err);
         setError('Failed to load case configuration');
       } finally {
-        setLoading(false);
+        setIsLoading(false);
       }
     };
 
-    if (caseId) {
+    if (params.id) {
       fetchCaseConfig();
     }
-  }, [caseId]);
+  }, [params.id]);
 
   const handleAssistantClick = (assistant: Assistant) => {
-    if (assistant.hasPassword && !unlockedAssistants.has(assistant.id)) {
-      setSelectedAssistant(assistant);
-      setPasswordError('');
+    if (!assistant.isLocked) {
+      const doc: CaseDocument = {
+        path: assistant.name,
+        title: assistant.name,
+        type: 'assistant',
+        content: assistant.systemPrompt
+      };
+      setSelectedDocument(doc);
+      setIsDocumentViewerOpen(true);
     } else {
-      setSelectedAssistant(assistant);
+      setSelectedDocument(null);
+      setIsPasswordModalOpen(true);
     }
   };
 
+  const handleDocumentClick = (document: CaseDocument) => {
+    setSelectedDocument(document);
+  };
+
+  const onUpdateDemo = async (updatedDemo: Demo) => {
+    setCaseConfig(updatedDemo);
+    toast.success('Demo updated successfully');
+  };
+
   // If case is loading, show loading state
-  if (loading) {
+  if (isLoading) {
     return (
       <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center">
         <div className="text-center">
@@ -178,7 +242,7 @@ export default function CaseInterface() {
   }
 
   // If case is password protected and not unlocked, show password form
-  if (caseConfig.hasPassword && !isCaseUnlocked) {
+  if (caseConfig.password && !isPasswordCorrect) {
     return (
       <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center">
         <div className="bg-white dark:bg-gray-800 shadow-xl rounded-lg p-8 max-w-md w-full">
@@ -197,13 +261,13 @@ export default function CaseInterface() {
               <input
                 id="case-password"
                 type="password"
-                value={casePassword}
-                onChange={(e) => setCasePassword(e.target.value)}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
                 className="mt-1 px-4 py-2 block w-full rounded-md border border-gray-300 dark:border-gray-600 shadow-sm focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
                 placeholder="Enter password"
               />
-              {passwordError && (
-                <p className="mt-2 text-sm text-red-600 dark:text-red-400">{passwordError}</p>
+              {error && (
+                <p className="mt-2 text-sm text-red-600 dark:text-red-400">{error}</p>
               )}
             </div>
             
@@ -227,47 +291,6 @@ export default function CaseInterface() {
     );
   }
 
-  const assistants = caseConfig.assistants;
-
-  const onUpdateDemo = async (updatedDemo: CaseConfig) => {
-    try {
-      if (caseId) {
-        // For dynamic demos, make API request
-        const response = await fetch(`/api/demos/${caseId}`, {
-          method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(updatedDemo),
-        });
-
-        if (!response.ok) {
-          throw new Error('Failed to update demo');
-        }
-
-        const updatedCase: CaseConfig = {
-          ...updatedDemo,
-          documents: updatedDemo.documents || [] // Ensure documents is not undefined
-        };
-        setCaseConfig(updatedCase);
-
-        // Update selected assistant if it was modified
-        if (selectedAssistant) {
-          const updatedAssistant = updatedCase.assistants.find(a => a.id === selectedAssistant.id);
-          if (updatedAssistant && JSON.stringify(updatedAssistant) !== JSON.stringify(selectedAssistant)) {
-            setSelectedAssistant(updatedAssistant);
-          }
-        }
-      }
-    } catch (error) {
-      console.error('Error updating demo:', error);
-      // Handle error appropriately
-    }
-  };
-
-  // Get the icon URL for the assistant
-  const assistantIcon = selectedAssistant?.iconUrl || selectedAssistant?.iconPath;
-
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
       {/* Header */}
@@ -279,16 +302,16 @@ export default function CaseInterface() {
                 <ArrowLeftIcon className="h-5 w-5" />
               </Link>
               <div className="flex items-center space-x-3">
-                <DemoIcon icon={caseConfig.iconPath} name={caseConfig.title} size={32} />
+                <DemoIcon icon={caseConfig.iconPath} name={caseConfig.name} size={32} />
                 <h1 className="text-xl font-semibold text-gray-900 dark:text-white">
-                  {caseConfig.title}
+                  {caseConfig.name || params.id}
                 </h1>
               </div>
             </div>
             <div className="flex items-center space-x-4">
               {caseConfig.documents && caseConfig.documents.length > 0 && (
                 <button
-                  onClick={() => setIsDocumentViewerOpen(true)}
+                  onClick={() => setShowDocuments(true)}
                   className="inline-flex items-center px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
                 >
                   <DocumentTextIcon className="h-5 w-5 mr-2" />
@@ -296,13 +319,22 @@ export default function CaseInterface() {
                 </button>
               )}
               {isAdmin && (
-                <button
-                  onClick={() => setIsAdminPanelOpen(true)}
-                  className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-                >
-                  <PencilIcon className="h-5 w-5 mr-2" />
-                  Edit Demo
-                </button>
+                <>
+                  <button
+                    onClick={() => setIsManageStudentsOpen(true)}
+                    className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
+                  >
+                    <UserPlusIcon className="h-5 w-5 mr-2" />
+                    Manage Students
+                  </button>
+                  <button
+                    onClick={() => setShowAdminPanel(true)}
+                    className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                  >
+                    <PencilIcon className="h-5 w-5 mr-2" />
+                    Edit Demo
+                  </button>
+                </>
               )}
             </div>
           </div>
@@ -315,19 +347,10 @@ export default function CaseInterface() {
         <div className="flex-none bg-white dark:bg-gray-800 p-4 border-b border-gray-200 dark:border-gray-700 sticky top-[72px] z-10">
           <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">Characters</h2>
           <div className="flex flex-wrap gap-3">
-            {assistants.map((assistant) => {
-              const isUnlocked = unlockedAssistants.has(assistant.id);
-              const isSelected = selectedAssistant?.id === assistant.id;
-              const isLocked = assistant.hasPassword && !isUnlocked;
-              const assistantIcon = assistant.iconUrl || assistant.iconPath;
+            {caseConfig?.assistants?.map((assistant) => {
+              const isLocked = assistant.isLocked;
+              const isSelected = selectedDocument?.path === assistant.name;
               
-              console.log(`Rendering assistant: ${assistant.name}`, {
-                id: assistant.id,
-                iconPath: assistantIcon,
-                isLocked,
-                isSelected
-              });
-
               return (
                 <div
                   key={assistant.id}
@@ -341,29 +364,17 @@ export default function CaseInterface() {
                   onClick={() => !isLocked && handleAssistantClick(assistant)}
                 >
                   <div className="flex items-center">
-                    {assistantIcon ? (
-                      <DemoIcon key={`icon-${assistant.id}`} icon={assistantIcon} name={assistant.name} size={24} />
-                    ) : (
-                      <div key={`default-icon-${assistant.id}`} className="w-6 h-6 bg-gray-200 dark:bg-gray-700 rounded-full mr-2" />
-                    )}
+                    <DemoIcon icon={caseConfig.iconPath} name={assistant.name} size={24} />
                     <span className="text-lg mr-2">{assistant.name}</span>
                     {isLocked ? (
-                      <LockClosedIcon key={`lock-${assistant.id}`} className="h-4 w-4 text-gray-500" />
+                      <LockClosedIcon className="h-4 w-4 text-gray-500" />
                     ) : (
-                      <LockOpenIcon key={`unlock-${assistant.id}`} className="h-4 w-4 text-green-500" />
+                      <LockOpenIcon className="h-4 w-4 text-green-500" />
                     )}
                   </div>
                   <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                     {assistant.description}
                   </p>
-                  {isLocked && (
-                    <PasswordInput
-                      assistantId={assistant.id}
-                      onUnlock={unlockAssistant}
-                      checkPassword={checkPassword}
-                      onError={(error) => setPasswordError(error)}
-                    />
-                  )}
                 </div>
               );
             })}
@@ -372,12 +383,12 @@ export default function CaseInterface() {
 
         {/* Chat Content - Full Width */}
         <div className="flex-1 w-full">
-          {selectedAssistant ? (
+          {selectedDocument ? (
             <StreamingChat
-              assistantId={selectedAssistant.id}
-              assistantName={selectedAssistant.name}
+              assistantId={selectedDocument.path}
+              assistantName={selectedDocument.title}
               caseId={params.id}
-              assistantIcon={assistantIcon}
+              assistantIcon={caseConfig.iconPath}
             />
           ) : (
             <div className="flex-1 bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 m-4 text-center">
@@ -409,23 +420,56 @@ export default function CaseInterface() {
       </footer>
 
       {/* Document Viewer */}
-      {caseConfig.documents && (
-        <DocumentViewer
-          documents={caseConfig.documents?.map(convertToViewerDocument) || []}
-          isOpen={isDocumentViewerOpen}
-          onClose={() => setIsDocumentViewerOpen(false)}
+      {showDocuments && caseConfig?.documents && (
+        <DocumentViewer 
+          documents={caseConfig.documents.map(convertToViewerDocument)}
+          isOpen={showDocuments}
+          onClose={() => setShowDocuments(false)}
         />
       )}
 
       {/* Admin Panel */}
       {isAdmin && (
         <AdminPanel
-          isOpen={isAdminPanelOpen}
-          onClose={() => setIsAdminPanelOpen(false)}
-          currentDemo={caseConfig}
-          onUpdateDemo={onUpdateDemo}
+          isOpen={showAdminPanel}
+          onClose={() => setShowAdminPanel(false)}
+          currentDemo={{
+            id: caseConfig?.id || '',
+            title: caseConfig?.name || '',
+            author: caseConfig?.creator?.email || '',
+            name: caseConfig?.name || '',
+            iconPath: caseConfig?.iconPath,
+            password: caseConfig?.password,
+            explanationMarkdownPath: '',
+            assistants: caseConfig?.assistants || [],
+            documents: caseConfig?.documents || [],
+            hasPassword: !!caseConfig?.password,
+            createdAt: caseConfig?.createdAt || '',
+            updatedAt: caseConfig?.updatedAt || ''
+          }}
+          onUpdateDemo={(updatedDemo) => {
+            const updatedCase: Demo = {
+              id: updatedDemo.id,
+              name: updatedDemo.title,
+              description: updatedDemo.name,
+              password: updatedDemo.hasPassword ? updatedDemo.password : undefined,
+              iconPath: updatedDemo.iconPath,
+              assistants: updatedDemo.assistants,
+              documents: updatedDemo.documents,
+              createdAt: updatedDemo.createdAt,
+              updatedAt: updatedDemo.updatedAt
+            };
+            onUpdateDemo(updatedCase);
+          }}
         />
       )}
+
+      {/* Manage Students Modal */}
+      <ManageStudentsModal
+        isOpen={isManageStudentsOpen}
+        onClose={() => setIsManageStudentsOpen(false)}
+        caseId={params.id}
+      />
     </div>
   );
 } 

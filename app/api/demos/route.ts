@@ -8,6 +8,7 @@ import { prisma } from '@/lib/prisma';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '../auth/[...nextauth]/route';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import type { CaseRole } from '@prisma/client';
 
 // Infer types from Prisma client
 type Case = Awaited<ReturnType<typeof prisma.case.findUnique>>;
@@ -67,6 +68,7 @@ export async function GET() {
             userAccess: {
               some: {
                 userId: user.id,
+                role: { in: ['STUDENT', 'PROFESSOR'] as CaseRole[] }
               },
             },
           },
@@ -133,7 +135,7 @@ export async function GET() {
       } catch (error) {
         console.error(`Error getting signed URL for icon: ${error}`);
         // Continue without the icon URL if there's an error
-      }
+    }
 
       return {
         id: c.id,
