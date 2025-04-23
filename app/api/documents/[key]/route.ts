@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSignedDownloadUrl } from '../../../lib/s3';
-import fs from 'fs';
+import { promises as fs } from 'fs';
 import path from 'path';
 
 // Simple in-memory cache
@@ -12,7 +12,7 @@ export async function GET(
   { params }: { params: { key: string } }
 ) {
   try {
-    const { key } = params;
+    const key = params.key;
     if (!key) {
       return NextResponse.json({ error: { message: 'No key provided' } }, { status: 400 });
     }
@@ -31,10 +31,8 @@ export async function GET(
 
     // Check if the file exists in the public directory
     const publicPath = path.join(process.cwd(), 'public', key);
-    
-    if (fs.existsSync(publicPath)) {
-      // For local files, read and cache
-      const content = fs.readFileSync(publicPath, 'utf-8');
+    try {
+      const content = await fs.readFile(publicPath, 'utf-8');
       
       // Update cache
       cache.set(key, {
@@ -48,96 +46,35 @@ export async function GET(
           'Cache-Control': 'public, max-age=300', // 5 minutes browser caching
         },
       });
+    } catch (error) {
+      // File not found in public directory, continue to S3
     }
 
-    // If not in public directory, try S3
-    const url = await getSignedDownloadUrl(key);
-    
-    // Fetch and cache S3 content
-    const response = await fetch(url);
-    if (!response.ok) {
-      throw new Error(`Failed to fetch from S3: ${response.status}`);
-    }
-    
-    const content = await response.text();
-    
-    // Update cache
-    cache.set(key, {
-      content,
-      timestamp: Date.now()
-    });
+    // Try S3
+    try {
+      const url = await getSignedDownloadUrl(key);
+      const response = await fetch(url);
+      const content = await response.text();
 
-    return new NextResponse(content, {
-      headers: {
-        'Content-Type': key.endsWith('.svg') ? 'image/svg+xml' : 'text/plain',
-        'Cache-Control': 'public, max-age=300', // 5 minutes browser caching
-      },
-    });
-  } catch (error) {
-    console.error('Error fetching document:', error);
-    return NextResponse.json(
-      { error: { message: 'Failed to fetch document' } },
-      { status: 500 }
-    );
-  }
-} 
-
-    // Check cache first
-    const cached = cache.get(key);
-    if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
-      console.log('Serving from cache:', key);
-      return new NextResponse(cached.content, {
-        headers: {
-          'Content-Type': key.endsWith('.svg') ? 'image/svg+xml' : 'text/plain',
-          'Cache-Control': 'public, max-age=300', // 5 minutes browser caching
-        },
-      });
-    }
-
-    // Check if the file exists in the public directory
-    const publicPath = path.join(process.cwd(), 'public', key);
-    
-    if (fs.existsSync(publicPath)) {
-      // For local files, read and cache
-      const content = fs.readFileSync(publicPath, 'utf-8');
-      
       // Update cache
       cache.set(key, {
         content,
         timestamp: Date.now()
       });
-      
+
       return new NextResponse(content, {
         headers: {
           'Content-Type': key.endsWith('.svg') ? 'image/svg+xml' : 'text/plain',
           'Cache-Control': 'public, max-age=300', // 5 minutes browser caching
         },
       });
+    } catch (error) {
+      console.error('Error fetching from S3:', error);
+      return NextResponse.json(
+        { error: { message: 'Failed to fetch document from S3' } },
+        { status: 500 }
+      );
     }
-
-    // If not in public directory, try S3
-    const url = await getSignedDownloadUrl(key);
-    
-    // Fetch and cache S3 content
-    const response = await fetch(url);
-    if (!response.ok) {
-      throw new Error(`Failed to fetch from S3: ${response.status}`);
-    }
-    
-    const content = await response.text();
-    
-    // Update cache
-    cache.set(key, {
-      content,
-      timestamp: Date.now()
-    });
-
-    return new NextResponse(content, {
-      headers: {
-        'Content-Type': key.endsWith('.svg') ? 'image/svg+xml' : 'text/plain',
-        'Cache-Control': 'public, max-age=300', // 5 minutes browser caching
-      },
-    });
   } catch (error) {
     console.error('Error fetching document:', error);
     return NextResponse.json(
