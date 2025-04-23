@@ -55,7 +55,6 @@ function AuthContextProvider({ children }: { children: ReactNode }) {
             const userData = await response.json();
             setUser(userData);
           } else {
-            // If user doesn't exist in database yet, create a default user state
             setUser({
               email: session.user.email,
               isAdmin: false,
@@ -65,7 +64,6 @@ function AuthContextProvider({ children }: { children: ReactNode }) {
           }
         } catch (error) {
           console.error('Error fetching user data:', error);
-          // Set default user state on error
           setUser({
             email: session.user.email,
             isAdmin: false,
@@ -85,7 +83,8 @@ function AuthContextProvider({ children }: { children: ReactNode }) {
   }, [session, status]);
 
   const login = () => {
-    signIn('azure-ad');
+    // Add callbackUrl to prevent automatic redirects
+    signIn('azure-ad', { callbackUrl: window.location.href });
   };
 
   const logout = () => {
@@ -119,4 +118,4 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 }
 
 // Hook to use the auth context
-export const useAuth = () => useContext(AuthContext); 
+export const useAuth = () => useContext(AuthContext);
