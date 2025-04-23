@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSignedDownloadUrl } from '../../../lib/s3';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET(request: NextRequest) {
   try {
-    const { searchParams } = new URL(request.url);
-    const key = searchParams.get('key');
+    const key = request.nextUrl.searchParams.get('key');
 
     if (!key) {
       console.error('No key provided for signed URL');
