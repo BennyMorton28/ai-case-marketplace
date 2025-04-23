@@ -13,8 +13,8 @@ import { SessionProvider } from './components/SessionProvider';
 const inter = Inter({ subsets: ['latin'] });
 
 export const metadata: Metadata = {
-  title: "Noyes AI Demos",
-  description: "Demo dashboard for Noyes AI applications",
+  title: "AI Cases at Kellogg",
+  description: "AI Case Studies for Kellogg School of Management",
   icons: {
     icon: [
       { url: '/favicon.ico', sizes: 'any' },
