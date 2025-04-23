@@ -129,12 +129,14 @@ export async function POST(req: Request) {
         }
       })();
 
-      // Return the readable stream
-      return new NextResponse(stream_response.readable, {
+      // Return the readable stream with required headers for production
+      return new Response(stream_response.readable, {
         headers: {
           'Content-Type': 'text/event-stream',
-          'Cache-Control': 'no-cache',
+          'Cache-Control': 'no-cache, no-transform',
           'Connection': 'keep-alive',
+          'X-Accel-Buffering': 'no', // Disable nginx buffering
+          'Content-Encoding': 'none', // Prevent compression
         },
       });
     } catch (error) {
