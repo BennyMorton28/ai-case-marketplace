@@ -198,7 +198,15 @@ switch_traffic() {
     
     # Update current symlink
     echo "Updating symlink to point to $target_env..."
-    sudo ln -sf "$target_dir" "$CURRENT_LINK"
+    sudo rm -f "$CURRENT_LINK"  # Remove existing symlink first
+    sudo ln -s "$target_dir" "$CURRENT_LINK"
+    
+    # Verify symlink was updated
+    local new_target=$(readlink "$CURRENT_LINK")
+    if [ "$new_target" != "$target_dir" ]; then
+        echo "Error: Failed to update symlink"
+        return 1
+    fi
     
     # Update Nginx configuration
     echo "Updating Nginx configuration to route to $target_env..."
