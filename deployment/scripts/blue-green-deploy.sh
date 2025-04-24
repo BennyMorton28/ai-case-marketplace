@@ -207,10 +207,15 @@ switch_traffic() {
     sudo rm -f "$CURRENT_LINK"
     sudo ln -s "$target_dir" "$CURRENT_LINK"
 
-    # Copy and update Nginx configurations
+    # Update Nginx configuration with the correct backend
     echo "Updating Nginx configurations..."
     sudo cp /home/ec2-user/app/deployment/nginx/blue-green.conf /etc/nginx/conf.d/blue-green.conf
     sudo cp /home/ec2-user/app/deployment/nginx/kellogg.noyesai.com.conf /etc/nginx/conf.d/kellogg.noyesai.com.conf
+    
+    # Dynamically update the default backend in the configuration
+    echo "Setting default backend to ${target_env}_backend..."
+    sudo sed -i "s/default \".*_backend\";/default \"${target_env}_backend\";/" /etc/nginx/conf.d/blue-green.conf
+    
     sudo chown root:root /etc/nginx/conf.d/blue-green.conf /etc/nginx/conf.d/kellogg.noyesai.com.conf
     sudo chmod 644 /etc/nginx/conf.d/blue-green.conf /etc/nginx/conf.d/kellogg.noyesai.com.conf
 
