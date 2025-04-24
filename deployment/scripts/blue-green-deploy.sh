@@ -69,10 +69,8 @@ npm run build
 
 # Setup static files
 echo "Setting up static files..."
-mkdir -p .next/standalone/.next/static
-cp -r .next/static/* .next/standalone/.next/static/
-sudo chown -R nginx:nginx .next/standalone/.next/static
-sudo chmod -R 755 .next/standalone/.next/static
+sudo chown -R nginx:nginx .next/static
+sudo chmod -R 755 .next/static
 
 # Start new environment with PM2
 echo "Starting new environment..."
@@ -136,6 +134,7 @@ if [ $? -eq 0 ]; then
     # Update current environment symlink
     sudo rm -f /home/ec2-user/environments/current
     sudo ln -s /home/ec2-user/environments/$TARGET_ENV /home/ec2-user/environments/current
+    sudo chown -R ec2-user:ec2-user /home/ec2-user/environments/current
     
     # Stop old environment after grace period
     echo "Waiting for connections to drain from old environment..."
