@@ -10,7 +10,7 @@
 
 ### Environment Variables
 
-The following environment variables are **required** for the application to function properly. The deployment script will validate the presence of these variables:
+The following environment variables are **required** for the application to function properly. The deployment script will automatically validate these variables before proceeding:
 
 ```bash
 # Authentication (Required)
@@ -69,19 +69,24 @@ We use a blue/green deployment strategy to ensure zero-downtime deployments. The
 To deploy:
 
 ```bash
+cd /home/ec2-user/app
+git pull origin master  # Always pull latest changes first
 bash deployment/scripts/blue-green-deploy.sh
 ```
 
-The script will:
+The script will automatically:
 1. Validate all required environment variables
 2. Determine the current active environment (blue or green)
-3. Deploy to the inactive environment
-4. Install dependencies and build the application
-5. Start the new version with PM2
-6. Perform health checks
-7. Update Nginx configuration
-8. Switch traffic to the new version if health checks pass
-9. Automatically rollback if deployment fails
+3. Clean up the target environment directory
+4. Copy application files and .env
+5. Install dependencies and build the application
+6. Clean up any existing PM2 processes on the target port
+7. Start the new version with PM2
+8. Perform health checks (with automatic retry)
+9. Update both the symlink and Nginx configuration
+10. Switch traffic to the new version if all checks pass
+11. Keep the previous environment running as a backup
+12. Automatically rollback if any step fails
 
 ### Environment Details
 
@@ -89,41 +94,44 @@ The script will:
 - Port: 3000
 - Directory: /home/ec2-user/environments/blue
 - PM2 Process Name: app-3000
+- Nginx Upstream: blue_backend
 
 #### Green Environment
 - Port: 3001
 - Directory: /home/ec2-user/environments/green
 - PM2 Process Name: app-3001
+- Nginx Upstream: green_backend
 
 ## Verification Steps
 
-After deployment:
+After deployment, the script will show detailed output of each step. You can also manually verify:
 
 1. Check environment status:
    ```bash
    # View current environment
    readlink /home/ec2-user/environments/current
    
-   # Check PM2 processes
+   # Check PM2 processes (both should be running)
    pm2 list
    ```
 
 2. Verify Nginx configuration:
    ```bash
-   # Test configuration
-   sudo nginx -t
-   
    # Check current routing
    cat /etc/nginx/conf.d/blue-green.conf
+   
+   # Test configuration
+   sudo nginx -t
    ```
 
-3. Test the application:
+3. Test all endpoints:
    ```bash
-   # Check health endpoint
-   curl http://172.31.29.105:3000/api/health  # or 3001 depending on active environment
+   # Check both environments
+   curl http://172.31.29.105:3000/api/health  # Blue
+   curl http://172.31.29.105:3001/api/health  # Green
    
-   # Check main site
-   curl -I https://kellogg.noyesai.com
+   # Check production URL
+   curl https://kellogg.noyesai.com/api/health
    ```
 
 ## Troubleshooting
@@ -133,47 +141,33 @@ After deployment:
 1. **Environment Variable Errors**
    - Check the `.env` file exists and has correct permissions
    - Verify all required variables are set
-   - Run `bash deployment/scripts/blue-green-deploy.sh` to validate
+   - The deployment script will validate variables automatically
 
 2. **Health Check Failures**
    - Check PM2 logs: `pm2 logs app-3000` or `pm2 logs app-3001`
-   - Verify application is running: `curl http://172.31.29.105:3000/api/health`
-   - Check system resources: `top` or `htop`
+   - The script will show health check attempts and responses
+   - Verify both environments: `curl http://172.31.29.105:3000/api/health`
 
 3. **Nginx Issues**
    - Check error logs: `sudo tail -f /var/log/nginx/error.log`
    - Verify configuration: `sudo nginx -t`
-   - Check upstream status: `curl http://172.31.29.105:3000/api/health`
+   - Check both upstreams are defined in `/etc/nginx/conf.d/blue-green.conf`
+
+### Automatic Rollback
+
+The deployment script includes automatic rollback if:
+- Environment variable validation fails
+- Application build fails
+- Health checks fail
+- Nginx configuration test fails
+- Traffic switch fails
 
 ### Manual Rollback
 
-If needed, you can manually rollback to the previous environment:
+If needed, you can manually switch environments:
 
 ```bash
-# 1. Identify current and previous environments
-current_env=$(readlink /home/ec2-user/environments/current)
-previous_env=$(if [[ "$current_env" == *"blue"* ]]; then echo "green"; else echo "blue"; fi)
+bash deployment/scripts/blue-green-deploy.sh
+```
 
-# 2. Switch symlink
-sudo ln -sf /home/ec2-user/environments/$previous_env /home/ec2-user/environments/current
-
-# 3. Update Nginx configuration
-sudo tee /etc/nginx/conf.d/blue-green.conf > /dev/null << EOF
-upstream blue_backend {
-    server 172.31.29.105:3000;
-    keepalive 32;
-}
-
-upstream green_backend {
-    server 172.31.29.105:3001;
-    keepalive 32;
-}
-
-map \$request_uri \$backend {
-    default $(if [[ "$previous_env" == "blue" ]]; then echo "blue_backend"; else echo "green_backend"; fi);
-}
-EOF
-
-# 4. Reload Nginx
-sudo nginx -t && sudo systemctl reload nginx
-``` 
+The script will automatically detect the current environment and switch to the other one. 
