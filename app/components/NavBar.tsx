@@ -3,10 +3,17 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '../contexts/AuthContext';
+import { useState } from 'react';
 
 export default function NavBar() {
   const { isAuthenticated, isAdmin, isSuperAdmin, login, logout, loading, user } = useAuth();
   const pathname = usePathname();
+  const [isSigningOut, setIsSigningOut] = useState(false);
+
+  const handleSignOut = async () => {
+    setIsSigningOut(true);
+    await logout();
+  };
 
   return (
     <nav className="bg-white shadow">
@@ -48,10 +55,13 @@ export default function NavBar() {
               <div className="flex items-center space-x-4">
                 <span className="text-gray-600">{user?.email}</span>
                 <button
-                  onClick={logout}
-                  className="px-4 py-2 text-sm font-medium text-gray-700 hover:text-gray-900"
+                  onClick={handleSignOut}
+                  disabled={isSigningOut}
+                  className={`px-4 py-2 text-sm font-medium text-gray-700 hover:text-gray-900 ${
+                    isSigningOut ? 'opacity-50 cursor-not-allowed' : ''
+                  }`}
                 >
-                  Sign Out
+                  {isSigningOut ? 'Signing Out...' : 'Sign Out'}
                 </button>
               </div>
             ) : (

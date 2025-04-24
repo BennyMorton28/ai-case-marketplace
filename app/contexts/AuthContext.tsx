@@ -87,7 +87,11 @@ function AuthContextProvider({ children }: { children: ReactNode }) {
   };
 
   const logout = () => {
-    signOut({ callbackUrl: '/' });
+    setUser(null);  // Clear user state immediately
+    signOut({ 
+      callbackUrl: '/',
+      redirect: true
+    });
   };
 
   const value = {
