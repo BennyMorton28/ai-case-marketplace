@@ -126,16 +126,24 @@ deploy_app() {
 
     # Perform health check
     echo "Performing health check..."
+    echo "Health check URL: http://172.31.29.105:$target_port/api/health"
+    
     for i in {1..30}; do
-        if curl -s "http://172.31.29.105:$target_port/api/health" | grep -q "ok"; then
+        echo "Attempt $i: Checking health endpoint..."
+        response=$(curl -s "http://172.31.29.105:$target_port/api/health")
+        echo "Response: $response"
+        
+        if echo "$response" | grep -q "ok"; then
             echo "Health check passed!"
             return 0
         fi
         echo "Waiting for application to start... ($i/30)"
-        sleep 2
+        sleep 5  # Increased from 2 to 5 seconds
     done
 
     echo "Health check failed after 30 attempts"
+    echo "Checking PM2 logs..."
+    pm2 logs "app-$target_port" --lines 50
     return 1
 }
 
