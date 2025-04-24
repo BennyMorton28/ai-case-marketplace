@@ -12,8 +12,16 @@ export default function NavBar() {
 
   const handleSignOut = async () => {
     setIsSigningOut(true);
-    await logout();
+    try {
+      await logout();
+    } catch (error) {
+      setIsSigningOut(false);
+      console.error('Error signing out:', error);
+    }
   };
+
+  // Don't show sign-in/out buttons while loading
+  const showAuthButtons = !loading;
 
   return (
     <nav className="bg-white shadow">
@@ -51,26 +59,28 @@ export default function NavBar() {
             </div>
           </div>
           <div className="flex items-center">
-            {isAuthenticated ? (
-              <div className="flex items-center space-x-4">
-                <span className="text-gray-600">{user?.email}</span>
+            {showAuthButtons && (
+              isAuthenticated ? (
+                <div className="flex items-center space-x-4">
+                  <span className="text-gray-600">{user?.email}</span>
+                  <button
+                    onClick={handleSignOut}
+                    disabled={isSigningOut}
+                    className={`px-4 py-2 text-sm font-medium text-gray-700 hover:text-gray-900 ${
+                      isSigningOut ? 'opacity-50 cursor-not-allowed' : ''
+                    }`}
+                  >
+                    {isSigningOut ? 'Signing Out...' : 'Sign Out'}
+                  </button>
+                </div>
+              ) : (
                 <button
-                  onClick={handleSignOut}
-                  disabled={isSigningOut}
-                  className={`px-4 py-2 text-sm font-medium text-gray-700 hover:text-gray-900 ${
-                    isSigningOut ? 'opacity-50 cursor-not-allowed' : ''
-                  }`}
+                  onClick={login}
+                  className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700"
                 >
-                  {isSigningOut ? 'Signing Out...' : 'Sign Out'}
+                  Sign In
                 </button>
-              </div>
-            ) : (
-              <button
-                onClick={login}
-                className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700"
-              >
-                Sign In
-              </button>
+              )
             )}
           </div>
         </div>

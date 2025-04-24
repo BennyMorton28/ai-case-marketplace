@@ -77,7 +77,9 @@ function AuthContextProvider({ children }: { children: ReactNode }) {
       setLoading(false);
     };
 
-    if (status !== 'loading') {
+    if (status === 'loading') {
+      setLoading(true);
+    } else {
       fetchUser();
     }
   }, [session, status]);
@@ -86,9 +88,10 @@ function AuthContextProvider({ children }: { children: ReactNode }) {
     signIn('azure-ad');
   };
 
-  const logout = () => {
+  const logout = async () => {
     setUser(null);  // Clear user state immediately
-    signOut({ 
+    setLoading(true);  // Set loading state to prevent flicker
+    await signOut({ 
       callbackUrl: '/',
       redirect: true
     });
