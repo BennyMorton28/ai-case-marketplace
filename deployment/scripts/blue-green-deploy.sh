@@ -147,9 +147,16 @@ if [ $? -eq 0 ]; then
     # Stop old environment after grace period
     echo "Waiting for connections to drain from old environment..."
     sleep 30
-    pm2 delete $CURRENT_ENV
-    pm2 delete kellogg-cases 2>/dev/null || true  # Clean up the old process name if it exists
-    
+
+    # Handle both the old process name and the new blue/green names
+    if [ "$CURRENT_ENV" = "blue" ]; then
+        pm2 delete blue 2>/dev/null || true
+        pm2 delete kellogg-cases 2>/dev/null || true
+    else
+        pm2 delete green 2>/dev/null || true
+        pm2 delete kellogg-cases 2>/dev/null || true
+    fi
+
     echo "Deployment completed successfully!"
 else
     echo "Nginx configuration test failed. Rolling back..."
