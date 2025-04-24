@@ -107,7 +107,23 @@ fi
 
 # Update nginx configuration
 echo "Updating nginx configuration..."
-echo "map \$request_uri \$backend { default \"${TARGET_ENV}_backend\"; }" | sudo tee /etc/nginx/current_backend.conf
+sudo bash -c "cat > /etc/nginx/conf.d/blue-green.conf << EOL
+# Define upstream servers for blue/green deployment
+upstream blue_backend {
+    server 172.31.29.105:3000;
+    keepalive 32;
+}
+
+upstream green_backend {
+    server 172.31.29.105:3001;
+    keepalive 32;
+}
+
+# Determine which backend to use
+map \$request_uri \$backend {
+    default \"${TARGET_ENV}_backend\";
+}
+EOL"
 
 # Test nginx configuration
 echo "Testing nginx configuration..."
