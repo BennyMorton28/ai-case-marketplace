@@ -122,10 +122,13 @@ upstream green_backend {
     keepalive 32;
 }
 
-# Determine which backend to use
-map \$http_host \$backend {
-    default \"${TARGET_ENV}_backend\";
+# Route all traffic to the current environment
+upstream current_backend {
+    server 172.31.29.105:${TARGET_PORT};
+    keepalive 32;
 }
+
+# Main location will use current_backend
 EOL"
 
 # Test nginx configuration
