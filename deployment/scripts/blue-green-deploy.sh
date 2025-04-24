@@ -142,6 +142,12 @@ deploy_app() {
         
         if echo "$response" | grep -q "ok"; then
             echo "Health check passed!"
+            if ! update_nginx_backend "$target_env"; then
+                echo "Failed to update Nginx configuration. Rolling back..."
+                rollback_deployment
+                exit 1
+            fi
+            echo "Successfully switched to $target_env environment"
             return 0
         fi
         echo "Waiting for application to start... ($i/30)"
@@ -215,6 +221,34 @@ switch_traffic() {
         sudo systemctl reload nginx
         echo "Nginx reloaded successfully."
         return 0
+    else
+        echo "Nginx configuration test failed!"
+        return 1
+    fi
+}
+
+update_nginx_backend() {
+    local target_env=$1
+    local config_file="/etc/nginx/conf.d/blue-green.conf"
+    
+    echo "Updating Nginx backend to $target_env"
+    
+    # Create a temporary file
+    local temp_file=$(mktemp)
+    
+    # Update the default backend in the configuration
+    sed "s/default \".*_backend\";/default \"${target_env}_backend\";/" "$config_file" > "$temp_file"
+    
+    # Copy the temporary file back
+    sudo cp "$temp_file" "$config_file"
+    rm "$temp_file"
+    
+    # Test and reload nginx
+    echo "Testing Nginx configuration..."
+    sudo nginx -t
+    if [ $? -eq 0 ]; then
+        echo "Reloading Nginx..."
+        sudo systemctl reload nginx
     else
         echo "Nginx configuration test failed!"
         return 1
