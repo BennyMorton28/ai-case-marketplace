@@ -14,6 +14,7 @@ export default function NavBar() {
     setIsSigningOut(true);
     try {
       await logout();
+      window.location.reload();
     } catch (error) {
       setIsSigningOut(false);
       console.error('Error signing out:', error);
