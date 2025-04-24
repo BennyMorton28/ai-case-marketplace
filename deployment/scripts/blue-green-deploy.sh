@@ -123,7 +123,7 @@ upstream green_backend {
 }
 
 # Determine which backend to use
-map \$request_uri \$backend {
+map \$http_host \$backend {
     default \"${TARGET_ENV}_backend\";
 }
 EOL"
