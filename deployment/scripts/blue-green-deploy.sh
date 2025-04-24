@@ -62,15 +62,33 @@ deploy_app() {
         return 1
     fi
 
+    # Set proper permissions on target directory
+    echo "Setting up target directory permissions..."
+    sudo chown -R ec2-user:ec2-user "$target_dir"
+    sudo chmod -R 755 "$target_dir"
+
     # Clean and create target directory
     echo "Cleaning target directory..."
-    rm -rf "$target_dir"/*
-    mkdir -p "$target_dir"
+    sudo rm -rf "$target_dir"/*
+    sudo mkdir -p "$target_dir"
+    sudo chown ec2-user:ec2-user "$target_dir"
 
     # Copy application files
     echo "Copying application files..."
     cp -r /home/ec2-user/app/* "$target_dir/"
     cp /home/ec2-user/app/.env "$target_dir/.env"
+
+    # Set permissions
+    echo "Setting permissions..."
+    sudo chown -R ec2-user:ec2-user "$target_dir"
+    sudo chmod -R 755 "$target_dir"
+    sudo chmod 600 "$target_dir/.env"
+
+    # Create necessary directories with proper permissions
+    echo "Setting up directory structure..."
+    sudo mkdir -p "$target_dir/public"
+    sudo chown -R ec2-user:ec2-user "$target_dir/public"
+    sudo chmod -R 755 "$target_dir/public"
 
     # Install dependencies
     echo "Installing dependencies..."
@@ -80,12 +98,6 @@ deploy_app() {
     # Build the application
     echo "Building application..."
     npm run build
-
-    # Set permissions
-    echo "Setting permissions..."
-    sudo chown -R ec2-user:ec2-user .
-    sudo chmod -R 755 .
-    sudo chmod 600 .env
 
     # Start the application with PM2
     echo "Starting application with PM2..."
@@ -154,8 +166,15 @@ echo "Target environment: $target_env"
 echo "Target directory: $target_dir"
 echo "Target port: $target_port"
 
+# Ensure base directory exists with proper permissions
+sudo mkdir -p "$BASE_DIR"
+sudo chown -R ec2-user:ec2-user "$BASE_DIR"
+sudo chmod -R 755 "$BASE_DIR"
+
 # Create target directory if it doesn't exist
-mkdir -p "$target_dir"
+sudo mkdir -p "$target_dir"
+sudo chown ec2-user:ec2-user "$target_dir"
+sudo chmod 755 "$target_dir"
 
 # Deploy to target environment
 if deploy_app "$target_dir" "$target_port"; then
