@@ -53,6 +53,9 @@ rm -rf /home/ec2-user/environments/$TARGET_ENV/*
 # Copy application to target environment
 cp -r /home/ec2-user/app/* /home/ec2-user/environments/$TARGET_ENV/
 
+# Ensure .env file is copied (even if hidden)
+cp -f /home/ec2-user/app/.env /home/ec2-user/environments/$TARGET_ENV/.env 2>/dev/null || echo "No .env file found"
+
 # Navigate to target environment
 cd /home/ec2-user/environments/$TARGET_ENV
 
@@ -142,6 +145,7 @@ if [ $? -eq 0 ]; then
     echo "Waiting for connections to drain from old environment..."
     sleep 30
     pm2 delete $CURRENT_ENV
+    pm2 delete kellogg-cases 2>/dev/null || true  # Clean up the old process name if it exists
     
     echo "Deployment completed successfully!"
 else
