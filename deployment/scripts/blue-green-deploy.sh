@@ -198,40 +198,22 @@ switch_traffic() {
     
     # Update current symlink
     echo "Updating symlink to point to $target_env..."
-    sudo rm -f "$CURRENT_LINK"  # Remove existing symlink first
+    sudo rm -f "$CURRENT_LINK"
     sudo ln -s "$target_dir" "$CURRENT_LINK"
-    
-    # Verify symlink was updated
-    local new_target=$(readlink "$CURRENT_LINK")
-    if [ "$new_target" != "$target_dir" ]; then
-        echo "Error: Failed to update symlink"
-        return 1
-    fi
-    
-    # Update Nginx configuration
-    echo "Updating Nginx configuration to route to $target_env..."
-    sudo tee /etc/nginx/conf.d/blue-green.conf > /dev/null << EOF
-upstream blue_backend {
-    server 172.31.29.105:$BLUE_PORT;
-    keepalive 32;
-}
 
-upstream green_backend {
-    server 172.31.29.105:$GREEN_PORT;
-    keepalive 32;
-}
-
-map \$request_uri \$backend {
-    default ${target_env}_backend;
-}
-EOF
+    # Copy and update Nginx configurations
+    echo "Updating Nginx configurations..."
+    sudo cp /home/ec2-user/app/deployment/nginx/blue-green.conf /etc/nginx/conf.d/blue-green.conf
+    sudo cp /home/ec2-user/app/deployment/nginx/kellogg.noyesai.com.conf /etc/nginx/conf.d/kellogg.noyesai.com.conf
+    sudo chown root:root /etc/nginx/conf.d/blue-green.conf /etc/nginx/conf.d/kellogg.noyesai.com.conf
+    sudo chmod 644 /etc/nginx/conf.d/blue-green.conf /etc/nginx/conf.d/kellogg.noyesai.com.conf
 
     # Test and reload Nginx
     echo "Testing Nginx configuration..."
     if sudo nginx -t; then
-        echo "Reloading Nginx..."
+        echo "Nginx configuration test passed. Reloading Nginx..."
         sudo systemctl reload nginx
-        echo "Traffic successfully switched to $target_env environment"
+        echo "Nginx reloaded successfully."
         return 0
     else
         echo "Nginx configuration test failed!"
