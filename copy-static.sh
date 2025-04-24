@@ -6,37 +6,21 @@ set -e
 echo "Starting static file copy process..."
 
 # Ensure directories exist
-mkdir -p .next/standalone/public
-mkdir -p .next/standalone/.next/static
-
-# Copy public files with verification
-echo "Copying public files..."
-if cp -rv public/* .next/standalone/public/; then
-    echo "Public files copied successfully"
-else
-    echo "Error copying public files"
-    exit 1
-fi
-
-# Copy static files with verification
-echo "Copying static files..."
-if cp -rv .next/static/* .next/standalone/.next/static/; then
-    echo "Static files copied successfully"
-else
-    echo "Error copying static files"
-    exit 1
-fi
+mkdir -p public
+mkdir -p .next/static
 
 # Set permissions
 echo "Setting permissions..."
-chmod -R 755 .next/standalone/public
-chmod -R 755 .next/standalone/.next/static
+sudo chown -R nginx:nginx public
+sudo chown -R nginx:nginx .next/static
+sudo chmod -R 755 public
+sudo chmod -R 755 .next/static
 
 # Verify file existence
-echo "Verifying file copy..."
-if [ ! -d ".next/standalone/.next/static" ] || [ ! -d ".next/standalone/public" ]; then
-    echo "Error: Required directories not found after copy"
+echo "Verifying directories..."
+if [ ! -d ".next/static" ] || [ ! -d "public" ]; then
+    echo "Error: Required directories not found"
     exit 1
 fi
 
-echo "Static file copy process completed successfully" 
+echo "Static file setup completed successfully" 
