@@ -43,42 +43,5 @@ async function checkMemory() {
 }
 
 export async function GET() {
-  const startTime = Date.now();
-
-  const [dbHealth, s3Health, memoryHealth] = await Promise.all([
-    checkDatabase(),
-    checkS3(),
-    checkMemory(),
-  ]);
-
-  const responseTime = Date.now() - startTime;
-  
-  const health = {
-    status: 'healthy',
-    timestamp: new Date().toISOString(),
-    responseTime,
-    services: {
-      database: dbHealth,
-      s3: s3Health,
-      memory: memoryHealth,
-    },
-    version: process.env.NEXT_PUBLIC_BUILD_TIME || 'development',
-  };
-
-  // Set overall status based on component health
-  if (dbHealth.status === 'unhealthy' || s3Health.status === 'unhealthy') {
-    health.status = 'unhealthy';
-  } else if (memoryHealth.status === 'warning') {
-    health.status = 'warning';
-  }
-
-  return NextResponse.json(health, {
-    status: health.status === 'healthy' ? 200 : 
-           health.status === 'warning' ? 200 : 503,
-    headers: {
-      'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
-      'Pragma': 'no-cache',
-      'Expires': '0',
-    },
-  });
+  return NextResponse.json({ status: 'healthy' });
 } 
