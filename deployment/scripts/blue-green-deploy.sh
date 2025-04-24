@@ -60,14 +60,15 @@ cd /home/ec2-user/environments/$TARGET_ENV
 echo "Installing dependencies..."
 npm install
 
-# Set PORT environment variable for the build
+# Set environment variables for the build
 export PORT=$TARGET_PORT
+export NODE_ENV=production
 
 # Build the application
 echo "Building application..."
 npm run build
 
-# Setup static files
+# Setup static files and standalone directory
 echo "Setting up static files..."
 sudo chown -R nginx:nginx .next/static
 sudo chmod -R 755 .next/static
@@ -75,7 +76,8 @@ sudo chmod -R 755 .next/static
 # Start new environment with PM2
 echo "Starting new environment..."
 pm2 delete $TARGET_ENV 2>/dev/null || true
-PORT=$TARGET_PORT pm2 start npm --name $TARGET_ENV -- start
+cd .next/standalone
+PORT=$TARGET_PORT NODE_ENV=production pm2 start server.js --name $TARGET_ENV --instances max
 
 # Wait for application to start
 echo "Waiting for application to start..."
