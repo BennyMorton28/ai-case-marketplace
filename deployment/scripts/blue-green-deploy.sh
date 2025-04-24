@@ -122,6 +122,13 @@ deploy_app() {
 
     # Start the application with PM2
     echo "Starting application with PM2..."
+    
+    # Stop any existing process on the target port
+    echo "Cleaning up old processes..."
+    pm2 delete "app-$target_port" || true
+    
+    # Start the new process
+    echo "Starting new process..."
     PORT=$target_port pm2 start npm --name "app-$target_port" -- start
 
     # Perform health check
