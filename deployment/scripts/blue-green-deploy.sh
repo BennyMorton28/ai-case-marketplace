@@ -189,6 +189,48 @@ get_env_port() {
     fi
 }
 
+# Function to switch traffic to target environment
+switch_traffic() {
+    local target_env="$1"
+    local target_dir="$2"
+    
+    echo "Switching traffic to $target_env environment..."
+    
+    # Update current symlink
+    echo "Updating symlink to point to $target_env..."
+    sudo ln -sf "$target_dir" "$CURRENT_LINK"
+    
+    # Update Nginx configuration
+    echo "Updating Nginx configuration to route to $target_env..."
+    sudo tee /etc/nginx/conf.d/blue-green.conf > /dev/null << EOF
+upstream blue_backend {
+    server 172.31.29.105:$BLUE_PORT;
+    keepalive 32;
+}
+
+upstream green_backend {
+    server 172.31.29.105:$GREEN_PORT;
+    keepalive 32;
+}
+
+map \$request_uri \$backend {
+    default ${target_env}_backend;
+}
+EOF
+
+    # Test and reload Nginx
+    echo "Testing Nginx configuration..."
+    if sudo nginx -t; then
+        echo "Reloading Nginx..."
+        sudo systemctl reload nginx
+        echo "Traffic successfully switched to $target_env environment"
+        return 0
+    else
+        echo "Nginx configuration test failed!"
+        return 1
+    fi
+}
+
 echo "Starting blue/green deployment..."
 
 # Determine current and target environments
@@ -216,36 +258,14 @@ sudo chmod 755 "$target_dir"
 if deploy_app "$target_dir" "$target_port"; then
     echo "Deployment successful!"
     
-    # Update current symlink
-    sudo ln -sf "$target_dir" "$CURRENT_LINK"
-    
-    # Update Nginx configuration
-    echo "Updating Nginx configuration..."
-    sudo tee /etc/nginx/conf.d/blue-green.conf > /dev/null << EOF
-upstream blue_backend {
-    server 172.31.29.105:$BLUE_PORT;
-    keepalive 32;
-}
-
-upstream green_backend {
-    server 172.31.29.105:$GREEN_PORT;
-    keepalive 32;
-}
-
-map \$request_uri \$backend {
-    default $(if [ "$target_env" = "blue" ]; then echo "blue_backend"; else echo "green_backend"; fi);
-}
-EOF
-
-    # Test and reload Nginx
-    echo "Testing Nginx configuration..."
-    if sudo nginx -t; then
-        echo "Reloading Nginx..."
-        sudo systemctl reload nginx
+    # Switch traffic to target environment
+    if switch_traffic "$target_env" "$target_dir"; then
         echo "Deployment completed successfully!"
         exit 0
     else
-        echo "Nginx configuration test failed!"
+        echo "Traffic switch failed! Rolling back..."
+        # Stop the failed deployment
+        pm2 delete "app-$target_port" || true
         exit 1
     fi
 else
