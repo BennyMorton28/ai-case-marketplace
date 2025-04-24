@@ -5,13 +5,27 @@ set -e
 
 echo "Starting blue/green deployment process..."
 
+# Configuration
+BLUE_PORT=3000
+GREEN_PORT=3001
+BASE_DIR="/home/ec2-user/environments"
+BLUE_DIR="$BASE_DIR/blue"
+GREEN_DIR="$BASE_DIR/green"
+CURRENT_LINK="$BASE_DIR/current"
+
 # Function to get current environment
 get_current_env() {
-    if [ -L /home/ec2-user/environments/current ]; then
-        current=$(readlink /home/ec2-user/environments/current)
-        echo $(basename $current)
+    if [ -L "$CURRENT_LINK" ]; then
+        current=$(readlink "$CURRENT_LINK")
+        if [ "$current" = "$BLUE_DIR" ]; then
+            echo "blue"
+        elif [ "$current" = "$GREEN_DIR" ]; then
+            echo "green"
+        else
+            echo "unknown"
+        fi
     else
-        echo "blue"
+        echo "none"
     fi
 }
 
@@ -25,141 +39,162 @@ get_target_env() {
     fi
 }
 
-# Function to get port for environment
-get_port() {
+# Function to get environment port
+get_env_port() {
     if [ "$1" = "blue" ]; then
-        echo "3000"
+        echo "$BLUE_PORT"
     else
-        echo "3001"
+        echo "$GREEN_PORT"
     fi
 }
 
-# Get current and target environments
-CURRENT_ENV=$(get_current_env)
-TARGET_ENV=$(get_target_env)
-TARGET_PORT=$(get_port $TARGET_ENV)
+# Main deployment logic
+echo "Starting blue-green deployment..."
 
-echo "Current environment: $CURRENT_ENV"
-echo "Target environment: $TARGET_ENV"
-echo "Target port: $TARGET_PORT"
+# Determine current and target environments
+current_env=$(get_current_env)
+target_env=$(get_target_env)
+target_dir="${BASE_DIR}/${target_env}"
+target_port=$(get_env_port "$target_env")
+
+echo "Current environment: $current_env"
+echo "Target environment: $target_env"
+echo "Target directory: $target_dir"
+echo "Target port: $target_port"
 
 # Create target directory if it doesn't exist
-sudo mkdir -p /home/ec2-user/environments/$TARGET_ENV
-sudo chown -R ec2-user:ec2-user /home/ec2-user/environments/$TARGET_ENV
+mkdir -p "$target_dir"
 
-# Clean target directory
-rm -rf /home/ec2-user/environments/$TARGET_ENV/*
-
-# Copy application to target environment
-cp -r /home/ec2-user/app/* /home/ec2-user/environments/$TARGET_ENV/
-
-# Ensure .env file is copied (even if hidden)
-cp -f /home/ec2-user/app/.env /home/ec2-user/environments/$TARGET_ENV/.env 2>/dev/null || echo "No .env file found"
-
-# Navigate to target environment
-cd /home/ec2-user/environments/$TARGET_ENV
-
-# Install dependencies
-echo "Installing dependencies..."
-npm install
-
-# Set environment variables for the build
-export PORT=$TARGET_PORT
-export NODE_ENV=production
-
-# Build the application
-echo "Building application..."
-npm run build
-
-# Setup static files and standalone directory
-echo "Setting up static files..."
-sudo chown -R nginx:nginx .next/static
-sudo chmod -R 755 .next/static
-
-# Start new environment with PM2
-echo "Starting new environment..."
-pm2 delete $TARGET_ENV 2>/dev/null || true
-cd .next/standalone
-PORT=$TARGET_PORT NODE_ENV=production pm2 start server.js --name $TARGET_ENV --instances max
-
-# Wait for application to start
-echo "Waiting for application to start..."
-sleep 10
-
-# Verify new environment
-echo "Verifying new environment..."
-HEALTH_CHECK=0
-MAX_RETRIES=5
-RETRY_COUNT=0
-
-while [ $HEALTH_CHECK -eq 0 ] && [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
-    if curl -s "http://172.31.29.105:$TARGET_PORT/api/health" | grep -q "healthy"; then
-        HEALTH_CHECK=1
-    else
-        echo "Health check failed, retrying in 5 seconds..."
-        sleep 5
-        RETRY_COUNT=$((RETRY_COUNT + 1))
-    fi
-done
-
-if [ $HEALTH_CHECK -eq 0 ]; then
-    echo "New environment failed health checks. Rolling back..."
-    pm2 delete $TARGET_ENV
-    exit 1
-fi
-
-# Update nginx configuration
-echo "Updating nginx configuration..."
-sudo bash -c "cat > /etc/nginx/conf.d/blue-green.conf << EOL
-# Define upstream servers for blue/green deployment
+# Deploy to target environment
+if deploy_app "$target_dir" "$target_port"; then
+    echo "Deployment successful!"
+    
+    # Update current symlink
+    sudo ln -sf "$target_dir" "$CURRENT_LINK"
+    
+    # Update Nginx configuration
+    echo "Updating Nginx configuration..."
+    sudo tee /etc/nginx/conf.d/blue-green.conf > /dev/null << EOF
 upstream blue_backend {
-    server 172.31.29.105:3000;
-    keepalive 32;
+    server 127.0.0.1:$BLUE_PORT;
 }
 
 upstream green_backend {
-    server 172.31.29.105:3001;
-    keepalive 32;
+    server 127.0.0.1:$GREEN_PORT;
 }
 
-# Route all traffic to the current environment
-upstream current_backend {
-    server 172.31.29.105:${TARGET_PORT};
-    keepalive 32;
+map \$request_uri \$backend {
+    default \$(if (\$target_env = "blue") blue_backend green_backend);
 }
+EOF
 
-# Main location will use current_backend
-EOL"
-
-# Test nginx configuration
-echo "Testing nginx configuration..."
-sudo nginx -t
-
-if [ $? -eq 0 ]; then
-    echo "Nginx configuration test passed. Reloading nginx..."
-    sudo systemctl reload nginx
-    
-    # Update current environment symlink
-    sudo rm -f /home/ec2-user/environments/current
-    sudo ln -s /home/ec2-user/environments/$TARGET_ENV /home/ec2-user/environments/current
-    sudo chown -R ec2-user:ec2-user /home/ec2-user/environments/current
-    
-    # Stop old environment after grace period
-    echo "Waiting for connections to drain from old environment..."
-    sleep 30
-
-    # Handle both the old process name and the new blue/green names
-    if [ "$CURRENT_ENV" = "blue" ]; then
-        pm2 delete blue 2>/dev/null || true
-        pm2 delete kellogg-cases 2>/dev/null || true
+    # Test and reload Nginx
+    echo "Testing Nginx configuration..."
+    if sudo nginx -t; then
+        echo "Reloading Nginx..."
+        sudo systemctl reload nginx
+        echo "Deployment completed successfully!"
+        exit 0
     else
-        pm2 delete green 2>/dev/null || true
-        pm2 delete kellogg-cases 2>/dev/null || true
+        echo "Nginx configuration test failed!"
+        exit 1
+    fi
+else
+    echo "Deployment failed! Rolling back..."
+    # Stop the failed deployment
+    pm2 delete "app-$target_port" || true
+    exit 1
+fi
+
+# Function to check if required environment variables exist
+check_environment_variables() {
+    local env_file="$1/.env"
+    if [ ! -f "$env_file" ]; then
+        echo "Error: .env file not found in $1"
+        return 1
     fi
 
-    echo "Deployment completed successfully!"
-else
-    echo "Nginx configuration test failed. Rolling back..."
-    pm2 delete $TARGET_ENV
-    exit 1
-fi 
+    required_vars=(
+        "NEXTAUTH_SECRET"
+        "NEXTAUTH_URL"
+        "AZURE_AD_CLIENT_ID"
+        "AZURE_AD_CLIENT_SECRET"
+        "AZURE_AD_TENANT_ID"
+        "DATABASE_URL"
+    )
+
+    missing_vars=()
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        if [[ ! "$line" =~ ^[[:space:]]*# && "$line" =~ = ]]; then
+            var_name="${line%%=*}"
+            required_vars=("${required_vars[@]/$var_name}")
+        fi
+    done < "$env_file"
+
+    for var in "${required_vars[@]}"; do
+        if [ ! -z "$var" ]; then
+            missing_vars+=("$var")
+        fi
+    done
+
+    if [ ${#missing_vars[@]} -ne 0 ]; then
+        echo "Error: Missing required environment variables in $env_file:"
+        printf '%s\n' "${missing_vars[@]}"
+        return 1
+    fi
+
+    return 0
+}
+
+# Function to deploy the application
+deploy_app() {
+    local target_dir="$1"
+    local target_port="$2"
+
+    # Check environment variables before proceeding
+    if ! check_environment_variables "$target_dir"; then
+        echo "Environment variables check failed. Aborting deployment."
+        return 1
+    }
+
+    # Clean and create target directory
+    echo "Cleaning target directory..."
+    rm -rf "$target_dir"/*
+    mkdir -p "$target_dir"
+
+    # Copy application files
+    echo "Copying application files..."
+    cp -r ./* "$target_dir/"
+
+    # Install dependencies
+    echo "Installing dependencies..."
+    cd "$target_dir"
+    npm install
+
+    # Build the application
+    echo "Building application..."
+    npm run build
+
+    # Set permissions
+    echo "Setting permissions..."
+    sudo chown -R ec2-user:ec2-user .
+    sudo chmod -R 755 .
+
+    # Start the application with PM2
+    echo "Starting application with PM2..."
+    PORT=$target_port pm2 start npm --name "app-$target_port" -- start
+
+    # Perform health check
+    echo "Performing health check..."
+    for i in {1..30}; do
+        if curl -s "http://localhost:$target_port/api/health" | grep -q "ok"; then
+            echo "Health check passed!"
+            return 0
+        fi
+        echo "Waiting for application to start... ($i/30)"
+        sleep 2
+    done
+
+    echo "Health check failed after 30 attempts"
+    return 1
+} 
