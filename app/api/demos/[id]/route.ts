@@ -3,7 +3,10 @@ import fs from 'fs';
 import path from 'path';
 import { getSavePaths } from '../../../lib/files';
 import { s3Client, BUCKET_NAME, getSignedDownloadUrl, uploadToS3 } from '../../../lib/s3';
-import { GetObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
+import { GetObjectCommand, DeleteObjectCommand, ListObjectsV2Command } from '@aws-sdk/client-s3';
+import { PrismaClient } from '@prisma/client';
+
+const prisma = new PrismaClient();
 
 // List of static demo IDs that should be protected
 const staticDemoIds = ['math-assistant', 'writing-assistant', 'language-assistant', 'coding-assistant'];
@@ -115,6 +118,16 @@ export async function DELETE(
       return new NextResponse('Cannot delete static demos', { status: 403 });
     }
 
+    // First delete from database (this will cascade to CaseAccess)
+    try {
+      await prisma.case.delete({
+        where: { id: demoId }
+      });
+    } catch (error) {
+      console.warn('Case not found in database or already deleted:', error);
+      // Continue with S3 cleanup even if database entry doesn't exist
+    }
+
     // For dynamic demos, delete from S3
     try {
       // First check if the demo exists
@@ -126,7 +139,7 @@ export async function DELETE(
 
       try {
         await s3Client.send(command);
-    } catch (error) {
+      } catch (error) {
         const s3Error = error as { name?: string };
         if (s3Error.name === 'NoSuchKey') {
           return new NextResponse('Demo not found', { status: 404 });
@@ -137,8 +150,8 @@ export async function DELETE(
       // Get the demo config to find all associated files
       const demoConfigResponse = await s3Client.send(command);
       if (!demoConfigResponse.Body) {
-      return new NextResponse('Demo not found', { status: 404 });
-    }
+        return new NextResponse('Demo not found', { status: 404 });
+      }
 
       const configText = await demoConfigResponse.Body.transformToString();
       const config = JSON.parse(configText);
@@ -183,7 +196,7 @@ export async function DELETE(
               Key: markdownKey
             }));
             console.log(`Deleted S3 assistant markdown: ${markdownKey}`);
-      } catch (error) {
+          } catch (error) {
             console.warn(`Could not delete markdown for assistant ${assistant.id}, it may not exist`);
           }
         }
@@ -198,6 +211,25 @@ export async function DELETE(
               Key: doc.path
             }));
             console.log(`Deleted S3 document: ${doc.path}`);
+          }
+        }
+      }
+
+      // Delete any remaining files in the demo directory
+      const listCommand = new ListObjectsV2Command({
+        Bucket: BUCKET_NAME,
+        Prefix: `demos/${demoId}/`
+      });
+      
+      const { Contents } = await s3Client.send(listCommand);
+      if (Contents) {
+        for (const file of Contents) {
+          if (file.Key) {
+            await s3Client.send(new DeleteObjectCommand({
+              Bucket: BUCKET_NAME,
+              Key: file.Key
+            }));
+            console.log(`Deleted remaining S3 file: ${file.Key}`);
           }
         }
       }

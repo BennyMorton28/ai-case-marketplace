@@ -1,6 +1,9 @@
 import { NextResponse } from 'next/server';
 import { s3Client, BUCKET_NAME, getSignedDownloadUrl } from '../../../lib/s3';
 import { ListObjectsV2Command, GetObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3';
+import { PrismaClient } from '@prisma/client';
+
+const prisma = new PrismaClient();
 
 // List of static demo IDs to exclude
 const STATIC_DEMOS = ['math-assistant', 'writing-assistant', 'language-assistant', 'coding-assistant'];
@@ -15,6 +18,33 @@ export async function GET() {
     });
 
     const { CommonPrefixes } = await s3Client.send(listCommand);
+    
+    // Get all demos from the database
+    const dbDemos = await prisma.case.findMany({
+      where: {
+        id: { notIn: STATIC_DEMOS }
+      }
+    });
+
+    // Create a set of demo IDs that exist in S3
+    const s3DemoIds = new Set(
+      CommonPrefixes?.map(prefix => prefix.Prefix?.split('/')[1]).filter(Boolean) || []
+    );
+
+    // Delete database entries for demos that don't exist in S3
+    for (const dbDemo of dbDemos) {
+      if (!s3DemoIds.has(dbDemo.id)) {
+        console.log(`Cleaning up orphaned database entry for demo ${dbDemo.id}`);
+        try {
+          await prisma.case.delete({
+            where: { id: dbDemo.id }
+          });
+        } catch (error) {
+          console.error(`Error deleting orphaned demo ${dbDemo.id}:`, error);
+        }
+      }
+    }
+
     if (!CommonPrefixes) {
       return new NextResponse(JSON.stringify([]), {
         headers: { 'Content-Type': 'application/json' },
@@ -65,6 +95,8 @@ export async function GET() {
               config.iconUrl = await getSignedDownloadUrl(config.iconPath);
             } catch (error) {
               console.warn(`Could not get signed URL for icon ${config.iconPath}:`, error);
+              // Don't fail if icon is missing
+              config.iconUrl = null;
             }
           }
 
@@ -76,6 +108,8 @@ export async function GET() {
                   assistant.iconUrl = await getSignedDownloadUrl(assistant.iconPath);
                 } catch (error) {
                   console.warn(`Could not get signed URL for assistant icon ${assistant.iconPath}:`, error);
+                  // Don't fail if assistant icon is missing
+                  assistant.iconUrl = null;
                 }
               }
             }
@@ -83,7 +117,20 @@ export async function GET() {
 
           demos.push(config);
         } catch (error) {
-          // Skip if config file doesn't exist
+          // If config file doesn't exist, check if we have a database entry to clean up
+          try {
+            const dbDemo = await prisma.case.findUnique({
+              where: { id: demoId }
+            });
+            if (dbDemo) {
+              console.log(`Cleaning up database entry for demo ${demoId} with missing config.json`);
+              await prisma.case.delete({
+                where: { id: demoId }
+              });
+            }
+          } catch (dbError) {
+            console.error(`Error cleaning up database for demo ${demoId}:`, dbError);
+          }
           console.warn(`No config file found for demo ${demoId}`);
           continue;
         }

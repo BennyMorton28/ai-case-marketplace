@@ -1,0 +1,116 @@
+
+--------------------------------------------------------------------------------
+2025-04-24T14:13:06.373Z
+{
+  "timestamp": "2025-04-24T14:13:06.072Z",
+  "endpoints": {
+    "/": {
+      "status": 200,
+      "headers": {
+        "server": "nginx/1.26.3",
+        "date": "Thu, 24 Apr 2025 14:13:06 GMT",
+        "content-type": "text/html; charset=utf-8",
+        "transfer-encoding": "chunked",
+        "connection": "keep-alive",
+        "vary": "RSC, Next-Router-State-Tree, Next-Router-Prefetch, Next-Url, Accept-Encoding",
+        "cache-control": "private, no-cache, no-store, max-age=0, must-revalidate",
+        "x-frame-options": "SAMEORIGIN",
+        "x-xss-protection": "1; mode=block",
+        "x-content-type-options": "nosniff",
+        "referrer-policy": "no-referrer-when-downgrade",
+        "content-security-policy": "default-src 'self' http: https: data: blob: 'unsafe-inline'",
+        "strict-transport-security": "max-age=31536000; includeSubDomains"
+      },
+      "data": "<!DOCTYPE html><html lang=\"en\" class=\"__className_3a0388 antialiased\"><head><meta charSet=\"utf-8\"/><..."
+    },
+    "/api/health": {
+      "status": 404,
+      "headers": {
+        "server": "nginx/1.26.3",
+        "date": "Thu, 24 Apr 2025 14:13:06 GMT",
+        "content-type": "text/html; charset=utf-8",
+        "transfer-encoding": "chunked",
+        "connection": "keep-alive",
+        "cache-control": "private, no-cache, no-store, max-age=0, must-revalidate",
+        "vary": "RSC, Next-Router-State-Tree, Next-Router-Prefetch, Next-Url, Accept-Encoding",
+        "x-frame-options": "SAMEORIGIN",
+        "x-xss-protection": "1; mode=block",
+        "x-content-type-options": "nosniff",
+        "referrer-policy": "no-referrer-when-downgrade",
+        "content-security-policy": "default-src 'self' http: https: data: blob: 'unsafe-inline'",
+        "strict-transport-security": "max-age=31536000; includeSubDomains"
+      },
+      "data": "<!DOCTYPE html><html lang=\"en\" class=\"__className_3a0388 antialiased\"><head><meta charSet=\"utf-8\"/><..."
+    },
+    "/_next/static/css/app.css": {
+      "status": 404,
+      "headers": {
+        "server": "nginx/1.26.3",
+        "date": "Thu, 24 Apr 2025 14:13:06 GMT",
+        "content-type": "text/html; charset=utf-8",
+        "transfer-encoding": "chunked",
+        "connection": "keep-alive",
+        "cache-control": "private, no-cache, no-store, max-age=0, must-revalidate",
+        "vary": "RSC, Next-Router-State-Tree, Next-Router-Prefetch, Next-Url, Accept-Encoding",
+        "x-frame-options": "SAMEORIGIN",
+        "x-xss-protection": "1; mode=block",
+        "x-content-type-options": "nosniff",
+        "referrer-policy": "no-referrer-when-downgrade",
+        "content-security-policy": "default-src 'self' http: https: data: blob: 'unsafe-inline'",
+        "strict-transport-security": "max-age=31536000; includeSubDomains"
+      },
+      "data": "<!DOCTYPE html><html lang=\"en\" class=\"__className_3a0388 antialiased\"><head><meta charSet=\"utf-8\"/><..."
+    },
+    "/static/images/logo.png": {
+      "status": 404,
+      "headers": {
+        "server": "nginx/1.26.3",
+        "date": "Thu, 24 Apr 2025 14:13:06 GMT",
+        "content-type": "text/html; charset=utf-8",
+        "transfer-encoding": "chunked",
+        "connection": "keep-alive",
+        "cache-control": "private, no-cache, no-store, max-age=0, must-revalidate",
+        "vary": "RSC, Next-Router-State-Tree, Next-Router-Prefetch, Next-Url, Accept-Encoding",
+        "x-frame-options": "SAMEORIGIN",
+        "x-xss-protection": "1; mode=block",
+        "x-content-type-options": "nosniff",
+        "referrer-policy": "no-referrer-when-downgrade",
+        "content-security-policy": "default-src 'self' http: https: data: blob: 'unsafe-inline'",
+        "strict-transport-security": "max-age=31536000; includeSubDomains"
+      },
+      "data": "<!DOCTYPE html><html lang=\"en\" class=\"__className_3a0388 antialiased\"><head><meta charSet=\"utf-8\"/><..."
+    }
+  },
+  "system": {
+    "nginx": "inactive",
+    "pm2": "inactive"
+  },
+  "processes": {
+    "error": "Command failed: pm2 jlist\n/bin/sh: pm2: command not found\n"
+  },
+  "static": {
+    "exists": true,
+    "files": [
+      {
+        "path": "/.next/static/development/_ssgManifest.js",
+        "size": 76
+      },
+      {
+        "path": "/.next/static/development/_buildManifest.js",
+        "size": 161
+      },
+      {
+        "path": "/.next/static/chunks/polyfills.js",
+        "size": 91460
+      }
+    ],
+    "totalSize": 91697
+  },
+  "env": {
+    "OPENAI_API_KEY": "missing",
+    "AWS_S3_BUCKET_NAME": "missing",
+    "AWS_S3_REGION": "missing",
+    "AWS_ACCESS_KEY_ID": "missing",
+    "AWS_SECRET_ACCESS_KEY": "missing"
+  }
+}

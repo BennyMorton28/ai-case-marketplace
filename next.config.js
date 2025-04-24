@@ -23,6 +23,38 @@ const nextConfig = {
       }
     ],
   },
+  // Add headers for better caching and performance
+  async headers() {
+    return [
+      {
+        source: '/:path*',
+        headers: [
+          {
+            key: 'Cache-Control',
+            value: 'public, max-age=3600, must-revalidate'
+          }
+        ]
+      },
+      {
+        source: '/_next/static/:path*',
+        headers: [
+          {
+            key: 'Cache-Control',
+            value: 'public, max-age=31536000, immutable'
+          }
+        ]
+      },
+      {
+        source: '/static/:path*',
+        headers: [
+          {
+            key: 'Cache-Control',
+            value: 'public, max-age=31536000, immutable'
+          }
+        ]
+      }
+    ]
+  },
   // Increase the timeout for serverless functions if needed
   serverRuntimeConfig: {
     // Will only be available on the server side
@@ -35,6 +67,23 @@ const nextConfig = {
   // Ignore TypeScript errors during build
   typescript: {
     ignoreBuildErrors: true,
+  },
+  // Optimize static file generation
+  generateBuildId: async () => {
+    return process.env.NEXT_PUBLIC_BUILD_TIME || 'development'
+  },
+  // Ensure CSS is properly handled
+  webpack: (config, { dev, isServer }) => {
+    // Optimize CSS handling
+    if (!dev && !isServer) {
+      config.optimization.splitChunks.cacheGroups.styles = {
+        name: 'styles',
+        test: /\.(css|scss)$/,
+        chunks: 'all',
+        enforce: true,
+      };
+    }
+    return config;
   }
 };
 
