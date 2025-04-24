@@ -95,9 +95,30 @@ deploy_app() {
     cd "$target_dir"
     npm install
 
+    # Set permissions before build
+    echo "Setting permissions before build..."
+    sudo chown -R ec2-user:ec2-user .
+    sudo chmod -R 755 .
+    sudo chmod 600 .env
+    
+    # Ensure .next directory has correct permissions
+    sudo mkdir -p .next
+    sudo chown -R ec2-user:ec2-user .next
+    sudo chmod -R 755 .next
+
     # Build the application
     echo "Building application..."
     npm run build
+
+    # Set permissions again after build
+    echo "Setting final permissions..."
+    sudo chown -R ec2-user:ec2-user .
+    sudo chmod -R 755 .
+    sudo chmod 600 .env
+
+    # Ensure static files have correct permissions
+    sudo chown -R ec2-user:ec2-user .next/static
+    sudo chmod -R 755 .next/static
 
     # Start the application with PM2
     echo "Starting application with PM2..."
