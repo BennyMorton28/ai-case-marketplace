@@ -76,15 +76,17 @@ if deploy_app "$target_dir" "$target_port"; then
     echo "Updating Nginx configuration..."
     sudo tee /etc/nginx/conf.d/blue-green.conf > /dev/null << EOF
 upstream blue_backend {
-    server 127.0.0.1:$BLUE_PORT;
+    server 172.31.29.105:$BLUE_PORT;
+    keepalive 32;
 }
 
 upstream green_backend {
-    server 127.0.0.1:$GREEN_PORT;
+    server 172.31.29.105:$GREEN_PORT;
+    keepalive 32;
 }
 
 map \$request_uri \$backend {
-    default \$(if (\$target_env = "blue") blue_backend green_backend);
+    default \$(if [ "\$target_env" = "blue" ]; then echo "blue_backend"; else echo "green_backend"; fi);
 }
 EOF
 
@@ -187,7 +189,7 @@ deploy_app() {
     # Perform health check
     echo "Performing health check..."
     for i in {1..30}; do
-        if curl -s "http://localhost:$target_port/api/health" | grep -q "ok"; then
+        if curl -s "http://172.31.29.105:$target_port/api/health" | grep -q "ok"; then
             echo "Health check passed!"
             return 0
         fi

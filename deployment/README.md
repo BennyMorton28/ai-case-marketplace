@@ -120,7 +120,7 @@ After deployment:
 3. Test the application:
    ```bash
    # Check health endpoint
-   curl http://localhost:3000/api/health  # or 3001 depending on active environment
+   curl http://172.31.29.105:3000/api/health  # or 3001 depending on active environment
    
    # Check main site
    curl -I https://kellogg.noyesai.com
@@ -137,13 +137,13 @@ After deployment:
 
 2. **Health Check Failures**
    - Check PM2 logs: `pm2 logs app-3000` or `pm2 logs app-3001`
-   - Verify application is running: `curl http://localhost:3000/api/health`
+   - Verify application is running: `curl http://172.31.29.105:3000/api/health`
    - Check system resources: `top` or `htop`
 
 3. **Nginx Issues**
    - Check error logs: `sudo tail -f /var/log/nginx/error.log`
    - Verify configuration: `sudo nginx -t`
-   - Check upstream status: `curl http://localhost:3000/api/health`
+   - Check upstream status: `curl http://172.31.29.105:3000/api/health`
 
 ### Manual Rollback
 
@@ -160,11 +160,13 @@ sudo ln -sf /home/ec2-user/environments/$previous_env /home/ec2-user/environment
 # 3. Update Nginx configuration
 sudo tee /etc/nginx/conf.d/blue-green.conf > /dev/null << EOF
 upstream blue_backend {
-    server 127.0.0.1:3000;
+    server 172.31.29.105:3000;
+    keepalive 32;
 }
 
 upstream green_backend {
-    server 127.0.0.1:3001;
+    server 172.31.29.105:3001;
+    keepalive 32;
 }
 
 map \$request_uri \$backend {
